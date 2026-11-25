@@ -107,7 +107,7 @@
     <details class="group" open>
       <summary>Export</summary>
       <div class="group-body">
-        <label class="field"><span>File name</span><input type="text" id="modelName" value="ledwall" placeholder="ledwall" spellcheck="false"></label>
+        <label class="field"><span>File name</span><input type="text" id="modelName" value="led_wall" placeholder="led_wall" spellcheck="false"></label>
         <label class="field"><span>OBJ units</span>
           <select id="coordSystem">
             <option value="mm">Millimeters (real scale)</option>
@@ -321,7 +321,7 @@
   // ---------- state ----------
   const state = {
     scene: null, camera: null, renderer: null, controls: null, grid: null,
-    mesh: null, objData: null, mtlData: null, modelName: 'ledwall',
+    mesh: null, objData: null, mtlData: null, modelName: 'led_wall',
     wireframeMode: false, textureUrl: null
   };
 
@@ -391,7 +391,7 @@
     const v = int ? parseInt($(id).value, 10) : parseFloat($(id).value);
     return Number.isFinite(v) ? Math.max(min, v) : fallback;
   }
-  const safeName = (s) => String(s || '').trim().replace(/[^\w.-]+/g, '_').replace(/^\.+/, '') || 'ledwall';
+  const safeName = (s) => String(s || '').trim().replace(/[^\w.-]+/g, '_').replace(/^\.+/, '') || 'led_wall';
 
   function getSettings() {
     const layoutType = getSeg(layoutSeg) === 'u-shape' ? 'u-shape' : 'flat';
@@ -425,7 +425,7 @@
     set('cols', s.cols, 4);
     set('rows', s.rows, 3);
     set('gap', s.gap, 0);
-    set('modelName', s.modelName, 'ledwall');
+    set('modelName', s.modelName, 'led_wall');
     const units = ['mm', 'm', 'in', 'ft', 'normalized'];
     $('coordSystem').value = units.includes(s.coordSystem) ? s.coordSystem : 'mm';
     setSeg(layoutSeg, s.layoutType === 'u-shape' ? 'u-shape' : 'flat');
@@ -724,16 +724,23 @@
     applyWireframe();
   });
 
+  // Exports always reflect the form as it is now, even if Generate wasn't pressed again.
+  function refreshExport() {
+    if (!state.objData) return false;
+    generateModel({ reframe: false });
+    return !!state.objData;
+  }
+
   $('downloadOBJ').addEventListener('click', () => {
-    if (!state.objData) return;
+    if (!refreshExport()) return;
     downloadBlob(new Blob([state.objData], { type: 'text/plain' }), `${state.modelName}.obj`);
   });
   $('downloadMTL').addEventListener('click', () => {
-    if (!state.mtlData) return;
+    if (!refreshExport()) return;
     downloadBlob(new Blob([state.mtlData], { type: 'text/plain' }), `${state.modelName}.mtl`);
   });
   $('downloadZIP').addEventListener('click', async () => {
-    if (!state.objData) return;
+    if (!refreshExport()) return;
     const enc = new TextEncoder();
     const name = state.modelName;
     const files = [

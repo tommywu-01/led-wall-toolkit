@@ -22,6 +22,14 @@
     .warn { color: var(--warn); font-size: 12px; margin: 0; }
     .zoom { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font: 12px var(--mono); }
     .zoom input { width: 110px; }
+    .quote {
+      display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; justify-content: space-between;
+      padding: 9px 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px;
+      background: linear-gradient(90deg, var(--accent-soft), transparent 70%);
+    }
+    .quote:hover { text-decoration: none; color: var(--text); }
+    .quote b { color: var(--text); font-family: var(--mono); font-weight: 600; }
+    .quote-go { color: var(--accent); font-weight: 600; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -199,6 +207,10 @@
       <button type="button" class="btn" id="dlCsv">CSV</button>
       <button type="button" class="btn primary" id="dlPng">Download PNG</button>
     </div>
+    <a class="quote" id="quote" href="https://ledwall.nyc/contact?utm_source=github&utm_medium=toolkit&utm_campaign=pixel-mapper" target="_blank" rel="noopener">
+      <span>Planning this <b id="quoteSize">wall</b> for an event in NYC, Jersey City or Hoboken?</span>
+      <span class="quote-go">Get a quote from ledwall.nyc →</span>
+    </a>
     <div class="viewport" id="viewport"><canvas id="map"></canvas></div>
   </section>
 </div>
@@ -594,6 +606,7 @@
       [`Days at ${s.dayHours} h`, `${(hours / s.dayHours).toFixed(2)} → ${Math.max(1, Math.ceil(hours / s.dayHours))}`]
     ]);
     $('brandScaleOut').textContent = `${s.brandScale.toFixed(2)}×`;
+    $('quoteSize').textContent = `${(mmW / MM_PER_FT).toFixed(1)} × ${(mmH / MM_PER_FT).toFixed(1)} ft wall`;
   }
 
   function fitPanel() {
