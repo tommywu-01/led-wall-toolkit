@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OBJ Generator · LED Wall Toolkit</title>
+  <meta name="description" content="Free browser tool that builds a 3D OBJ/MTL model of an LED wall from its cabinet size and layout, with UV mapping for a pixel map texture. Flat or U-shaped walls, live 3D preview.">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .viewport { position: relative; flex: 1; min-height: 0; background: #000; }
+    .viewport canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .empty-note {
+      position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
+      color: var(--faint); font-size: 13px; text-align: center; padding: 20px;
+    }
+    .drop {
+      display: grid; gap: 4px; justify-items: center; text-align: center; cursor: pointer;
+      padding: 14px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); background: var(--bg);
+      font-size: 13px;
+    }
+    .drop:hover, .drop.over { border-color: var(--accent); }
+    .drop.has-texture { border-style: solid; border-color: var(--good); }
+    .drop small { color: var(--faint); font-size: 11.5px; }
+    .drop img { max-width: 100%; max-height: 100px; border-radius: 4px; margin-top: 6px; }
+    [hidden] { display: none !important; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--line-strong); filter: none; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="brand-mark"></span>LED Wall Toolkit</a>
+  <nav class="nav">
+    <a href="pixel-mapper.html">Pixel Mapper</a>
+    <a href="obj-generator.html" aria-current="page">OBJ Generator</a>
+    <a href="stage-studio.html">Stage Studio</a>
+  </nav>
+  <span class="spacer"></span>
+  <a class="cta" href="https://ledwall.nyc/?utm_source=github&utm_medium=toolkit" target="_blank" rel="noopener"><span>Need a wall for an event in NYC?</span> <b>ledwall.nyc →</b></a>
+</header>
+
+<div class="app">
+  <aside class="sidebar">
+    <details class="group" open>
+      <summary>Cabinet</summary>
+      <div class="group-body">
+        <div class="row2">
+          <label class="field"><span>Pixels wide</span><input type="number" id="cabPxW" value="320" min="1" step="1"></label>
+          <label class="field"><span>Pixels high</span><input type="number" id="cabPxH" value="180" min="1" step="1"></label>
+        </div>
+        <div class="row2">
+          <label class="field"><span>Width (mm)</span><input type="number" id="cabPhysW" value="600" min="1" step="0.1"></label>
+          <label class="field"><span>Height (mm)</span><input type="number" id="cabPhysH" value="337.5" min="1" step="0.1"></label>
+        </div>
+        <label class="field"><span>Depth (mm)</span><input type="number" id="cabDepth" value="100" min="1" step="1"></label>
+        <p class="hint">One cabinet (panel) of the wall, as listed on its spec sheet. 1 in = 25.4 mm.</p>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>Layout</summary>
+      <div class="group-body">
+        <div class="field">
+          <span>Shape</span>
+          <div class="seg" id="layoutType">
+            <button type="button" data-value="flat" aria-pressed="true">Flat</button>
+            <button type="button" data-value="u-shape" aria-pressed="false">U-shape (3 walls)</button>
+          </div>
+        </div>
+        <div class="row2">
+          <label class="field" id="colsField"><span>Columns</span><input type="number" id="cols" value="4" min="1" step="1"></label>
+          <label class="field"><span>Rows</span><input type="number" id="rows" value="3" min="1" step="1"></label>
+        </div>
+        <div class="row3" id="uShapeSettings" hidden>
+          <label class="field"><span>Left cols</span><input type="number" id="leftCols" value="2" min="1" step="1"></label>
+          <label class="field"><span>Center cols</span><input type="number" id="centerCols" value="4" min="1" step="1"></label>
+          <label class="field"><span>Right cols</span><input type="number" id="rightCols" value="2" min="1" step="1"></label>
+        </div>
+        <label class="field"><span>Gap between cabinets (mm)</span><input type="number" id="gap" value="0" min="0" step="0.1"></label>
+        <p class="hint" id="layoutHint">A single flat wall facing the viewer.</p>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>UV mapping</summary>
+      <div class="group-body">
+        <div class="seg" id="uvStrategy">
+          <button type="button" data-value="continuous" aria-pressed="true">Continuous</button>
+          <button type="button" data-value="per-cabinet" aria-pressed="false">Per cabinet</button>
+        </div>
+        <p class="hint" id="uvHint">One image stretches across the whole wall. Best for video content and pixel maps.</p>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>Preview texture</summary>
+      <div class="group-body">
+        <input type="file" id="textureInput" accept="image/*" hidden>
+        <label class="drop" id="textureUpload" for="textureInput">
+          <span>Choose or drop an image</span>
+          <small>Optional. A pixel map PNG works well. Used in the preview and added to the ZIP.</small>
+          <img id="texturePreview" alt="Texture preview" hidden>
+        </label>
+        <button type="button" class="btn ghost" id="clearTexture" hidden>Remove texture</button>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>Export</summary>
+      <div class="group-body">
+        <label class="field"><span>File name</span><input type="text" id="modelName" value="ledwall" placeholder="ledwall" spellcheck="false"></label>
+        <label class="field"><span>OBJ units</span>
+          <select id="coordSystem">
+            <option value="mm">Millimeters (real scale)</option>
+            <option value="m">Meters</option>
+            <option value="in">Inches</option>
+            <option value="ft">Feet</option>
+            <option value="normalized">Normalized (width = 1)</option>
+          </select>
+        </label>
+        <div class="row3">
+          <button type="button" class="btn" id="downloadOBJ" disabled>.OBJ</button>
+          <button type="button" class="btn" id="downloadMTL" disabled>.MTL</button>
+          <button type="button" class="btn primary" id="downloadZIP" disabled>ZIP (all)</button>
+        </div>
+        <p class="hint">Generate the model first. The ZIP holds the OBJ, the MTL and the texture (if one is loaded).</p>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>Model statistics</summary>
+      <div class="group-body">
+        <dl class="kv">
+          <dt>Cabinets</dt><dd id="statCabinets">–</dd>
+          <dt>Vertices</dt><dd id="statVertices">–</dd>
+          <dt>Faces (quads)</dt><dd id="statFaces">–</dd>
+          <dt>Size</dt><dd id="statDimensions">–</dd>
+          <dt>Resolution</dt><dd id="statResolution">–</dd>
+          <dt>OBJ size</dt><dd id="statFileSize">–</dd>
+        </dl>
+      </div>
+    </details>
+
+    <details class="group">
+      <summary>Saved layouts</summary>
+      <div class="group-body">
+        <label class="field"><span>Layout name</span><input type="text" id="layoutName" placeholder="e.g. Main wall 4×3"></label>
+        <button type="button" class="btn" id="saveLayout">Save current settings</button>
+        <label class="field"><span>Saved in this browser</span>
+          <select id="savedLayouts"><option value="">Select a saved layout</option></select>
+        </label>
+        <div class="row2">
+          <button type="button" class="btn" id="loadLayout">Load</button>
+          <button type="button" class="btn danger" id="deleteLayout">Delete</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="group">
+      <summary>Import from Pixel Mapper</summary>
+      <div class="group-body">
+        <label class="field"><span>Map ID or share link</span><textarea id="pixelMapID" placeholder="Paste a Map ID from the Pixel Mapper"></textarea></label>
+        <button type="button" class="btn" id="loadPixelID">Load settings</button>
+        <p class="hint">Copy the Map ID in the <a href="pixel-mapper.html">Pixel Mapper</a> to reuse its cabinet size, columns and rows here.</p>
+      </div>
+    </details>
+
+    <p class="credit">Free & open source · maintained by <a href="https://ledwall.nyc/?utm_source=github&utm_medium=toolkit" target="_blank" rel="noopener">ledwall.nyc</a>, LED wall rental in NYC · original tool by <a href="https://github.com/tommywu-01" target="_blank" rel="noopener">Tommy Wu</a> · <a href="https://github.com/tommywu-01/led-wall-toolkit">source</a></p>
+  </aside>
+
+  <section class="stage">
+    <div class="toolbar">
+      <button type="button" class="btn primary" id="generateBtn">Generate model</button>
+      <button type="button" class="btn" id="resetView">Reset view</button>
+      <button type="button" class="btn" id="toggleWireframe" aria-pressed="false">Wireframe</button>
+      <span class="spacer"></span>
+      <div class="stats">
+        <span class="chip">Cabinets <b id="chipCabinets">–</b></span>
+        <span class="chip">Pixels <b id="chipResolution">–</b></span>
+      </div>
+    </div>
+    <div class="viewport" id="canvas-container">
+      <div class="empty-note" id="emptyNote">Set up the cabinet and layout, then press “Generate model”.<br>Drag to orbit · right-drag to pan · scroll to zoom.</div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- small helpers ----------
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
+    del(k) { try { localStorage.removeItem(k); } catch { /* blocked */ } },
+    json(k, fallback) {
+      const raw = this.get(k);
+      if (!raw) return fallback;
+      try { return JSON.parse(raw) ?? fallback; } catch { return fallback; }
+    }
+  };
+  const KEY_LAYOUTS = 'ledWallLayouts';
+  const KEY_CURRENT = 'ledWallCurrentSettings';
+  const KEY_SESSION = 'ledWallSessionState';
+
+  let toastTimer = 0;
+  function toast(msg, ms = 2600) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
+
+  function initSeg(el) {
+    el.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-value]');
+      if (!btn) return;
+      setSeg(el, btn.dataset.value);
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+  const getSeg = (el) => el.querySelector('button[aria-pressed="true"]')?.dataset.value;
+  function setSeg(el, value) {
+    el.querySelectorAll('button[data-value]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.value === value)));
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Minimal "stored" (uncompressed) ZIP writer, so no extra library is needed.
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes) {
+    let c = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  function makeZip(files) {
+    const enc = new TextEncoder();
+    const now = new Date();
+    const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+    const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+    const parts = [];
+    const central = [];
+    let offset = 0;
+    for (const f of files) {
+      const name = enc.encode(f.name);
+      const crc = crc32(f.data);
+      const size = f.data.length;
+      const local = new Uint8Array(30 + name.length);
+      const lv = new DataView(local.buffer);
+      lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true);
+      lv.setUint16(8, 0, true); lv.setUint16(10, dosTime, true); lv.setUint16(12, dosDate, true);
+      lv.setUint32(14, crc, true); lv.setUint32(18, size, true); lv.setUint32(22, size, true);
+      lv.setUint16(26, name.length, true); lv.setUint16(28, 0, true);
+      local.set(name, 30);
+      const cen = new Uint8Array(46 + name.length);
+      const cv = new DataView(cen.buffer);
+      cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+      cv.setUint16(8, 0x0800, true); cv.setUint16(10, 0, true); cv.setUint16(12, dosTime, true);
+      cv.setUint16(14, dosDate, true); cv.setUint32(16, crc, true); cv.setUint32(20, size, true);
+      cv.setUint32(24, size, true); cv.setUint16(28, name.length, true); cv.setUint32(42, offset, true);
+      cen.set(name, 46);
+      parts.push(local, f.data);
+      central.push(cen);
+      offset += local.length + size;
+    }
+    const cenSize = central.reduce((s, c) => s + c.length, 0);
+    const end = new Uint8Array(22);
+    const ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true);
+    ev.setUint32(12, cenSize, true); ev.setUint32(16, offset, true);
+    return new Blob([...parts, ...central, end], { type: 'application/zip' });
+  }
+
+  async function imageToPngBytes(url) {
+    if (url.startsWith('data:image/png')) {
+      return new Uint8Array(await (await fetch(url)).arrayBuffer());
+    }
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img, 0, 0);
+    const blob = await new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('PNG encode failed');
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+
+  // ---------- state ----------
+  const state = {
+    scene: null, camera: null, renderer: null, controls: null, grid: null,
+    mesh: null, objData: null, mtlData: null, modelName: 'ledwall',
+    wireframeMode: false, textureUrl: null
+  };
+
+  const canvasContainer = $('canvas-container');
+  const layoutSeg = $('layoutType');
+  const uvSeg = $('uvStrategy');
+  const downloadButtons = [$('downloadOBJ'), $('downloadMTL'), $('downloadZIP')];
+
+  // ---------- three.js scene ----------
+  function initScene() {
+    state.scene = new THREE.Scene();
+    state.scene.background = new THREE.Color(0x000000);
+
+    const w = Math.max(1, canvasContainer.clientWidth);
+    const h = Math.max(1, canvasContainer.clientHeight);
+    state.camera = new THREE.PerspectiveCamera(50, w / h, 1, 20000);
+    state.camera.position.set(2000, 1200, 3000);
+
+    state.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: false });
+    state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    state.renderer.setSize(w, h, false);
+    canvasContainer.appendChild(state.renderer.domElement);
+
+    state.controls = new OrbitControls(state.camera, state.renderer.domElement);
+    state.controls.enableDamping = true;
+    state.controls.dampingFactor = 0.05;
+
+    state.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(1000, 2000, 3000);
+    state.scene.add(dir);
+
+    setGrid(5000);
+    state.scene.add(new THREE.AxesHelper(1000));
+
+    const animate = () => {
+      requestAnimationFrame(animate);
+      state.controls.update();
+      state.renderer.render(state.scene, state.camera);
+    };
+    animate();
+
+    // The viewport is a flex child, so watch it directly rather than the window.
+    new ResizeObserver(() => {
+      const cw = canvasContainer.clientWidth;
+      const ch = canvasContainer.clientHeight;
+      if (!cw || !ch) return;
+      state.camera.aspect = cw / ch;
+      state.camera.updateProjectionMatrix();
+      state.renderer.setSize(cw, ch, false);
+    }).observe(canvasContainer);
+  }
+
+  function setGrid(size) {
+    if (state.grid) {
+      state.scene.remove(state.grid);
+      state.grid.geometry.dispose();
+      state.grid.material.dispose();
+    }
+    const s = Math.max(5000, Math.ceil(size / 1000) * 1000);
+    state.grid = new THREE.GridHelper(s, Math.round(s / 500), 0x2c3744, 0x161c23);
+    state.scene.add(state.grid);
+  }
+
+  // ---------- settings ----------
+  function readNum(id, fallback, { int = false, min = -Infinity } = {}) {
+    const v = int ? parseInt($(id).value, 10) : parseFloat($(id).value);
+    return Number.isFinite(v) ? Math.max(min, v) : fallback;
+  }
+  const safeName = (s) => String(s || '').trim().replace(/[^\w.-]+/g, '_').replace(/^\.+/, '') || 'ledwall';
+
+  function getSettings() {
+    const layoutType = getSeg(layoutSeg) === 'u-shape' ? 'u-shape' : 'flat';
+    const u = layoutType === 'u-shape';
+    return {
+      cabPxW: readNum('cabPxW', 320, { int: true, min: 1 }),
+      cabPxH: readNum('cabPxH', 180, { int: true, min: 1 }),
+      cabPhysW: readNum('cabPhysW', 600, { min: 0.1 }),
+      cabPhysH: readNum('cabPhysH', 337.5, { min: 0.1 }),
+      cabDepth: readNum('cabDepth', 100, { min: 0.1 }),
+      cols: readNum('cols', 4, { int: true, min: 1 }),
+      rows: readNum('rows', 3, { int: true, min: 1 }),
+      gap: readNum('gap', 0, { min: 0 }),
+      layoutType,
+      leftCols: u ? readNum('leftCols', 2, { int: true, min: 1 }) : 0,
+      centerCols: u ? readNum('centerCols', 4, { int: true, min: 1 }) : 0,
+      rightCols: u ? readNum('rightCols', 2, { int: true, min: 1 }) : 0,
+      uvStrategy: getSeg(uvSeg) === 'per-cabinet' ? 'per-cabinet' : 'continuous',
+      modelName: safeName($('modelName').value),
+      coordSystem: $('coordSystem').value
+    };
+  }
+
+  function applySettings(s = {}) {
+    const set = (id, v, d) => { $(id).value = v ?? d; };
+    set('cabPxW', s.cabPxW, 320);
+    set('cabPxH', s.cabPxH, 180);
+    set('cabPhysW', s.cabPhysW, 600);
+    set('cabPhysH', s.cabPhysH, 337.5);
+    set('cabDepth', s.cabDepth, 100);
+    set('cols', s.cols, 4);
+    set('rows', s.rows, 3);
+    set('gap', s.gap, 0);
+    set('modelName', s.modelName, 'ledwall');
+    const units = ['mm', 'm', 'in', 'ft', 'normalized'];
+    $('coordSystem').value = units.includes(s.coordSystem) ? s.coordSystem : 'mm';
+    setSeg(layoutSeg, s.layoutType === 'u-shape' ? 'u-shape' : 'flat');
+    setSeg(uvSeg, s.uvStrategy === 'per-cabinet' ? 'per-cabinet' : 'continuous');
+    if (s.leftCols) $('leftCols').value = s.leftCols;
+    if (s.centerCols) $('centerCols').value = s.centerCols;
+    if (s.rightCols) $('rightCols').value = s.rightCols;
+    syncLayoutUI();
+  }
+
+  function syncLayoutUI() {
+    const u = getSeg(layoutSeg) === 'u-shape';
+    $('uShapeSettings').hidden = !u;
+    $('colsField').hidden = u;
+    $('layoutHint').textContent = u
+      ? 'Left and right walls turn 90° toward the viewer. The texture wraps left wall → center → right wall.'
+      : 'A single flat wall facing the viewer.';
+    $('uvHint').textContent = getSeg(uvSeg) === 'per-cabinet'
+      ? 'Every cabinet gets the full 0–1 UV square, so one image repeats on each cabinet.'
+      : 'One image stretches across the whole wall. Best for video content and pixel maps.';
+  }
+
+  const totalColsOf = (s) => (s.layoutType === 'u-shape' ? s.leftCols + s.centerCols + s.rightCols : s.cols);
+
+  // ---------- geometry ----------
+  // Convention: the viewer is on +Z. Each cabinet's LED face is its front (z = 0 in
+  // cabinet space, normal +Z) and the cabinet body extends behind it toward -Z.
+  function calculateUV(x, y, totalCols, rows, uvStrategy) {
+    if (uvStrategy === 'per-cabinet') return { u_min: 0, v_min: 0, u_max: 1, v_max: 1 };
+    return {
+      u_min: x / totalCols,
+      u_max: (x + 1) / totalCols,
+      v_min: (rows - y - 1) / rows, // row 0 is the top row of the image
+      v_max: (rows - y) / rows
+    };
+  }
+
+  // Position (cabinet-space origin) and Y rotation of one cabinet.
+  // U-shape: columns run left wall (far end → corner), center, right wall (corner → far end),
+  // so a continuous texture reads left to right for someone standing inside the U.
+  function cabinetTransform(s, col, row) {
+    const { cabPhysW: W, cabPhysH: H, gap, layoutType, leftCols: L, centerCols: C } = s;
+    const pitch = W + gap;
+    const y = (s.rows - 1 - row) * (H + gap); // row 0 = top
+    if (layoutType !== 'u-shape') return { position: [col * pitch, y, 0], rotation: 0 };
+    if (col < L) {
+      const j = L - 1 - col; // 0 at the corner
+      return { position: [0, y, j * pitch + W], rotation: -Math.PI / 2 };
+    }
+    if (col < L + C) return { position: [(col - L) * pitch, y, 0], rotation: 0 };
+    const j = col - L - C;
+    const centerW = C * W + (C - 1) * gap;
+    return { position: [centerW, y, j * pitch], rotation: Math.PI / 2 };
+  }
+
+  const BASE_NORMALS = [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]];
+
+  function cabinetGeometry(s, col, row) {
+    const { cabPhysW: W, cabPhysH: H, cabDepth: D } = s;
+    const { position: [px, py, pz], rotation } = cabinetTransform(s, col, row);
+    // Rotations are multiples of 90°, so snap to exact values (no 6e-17 noise in the OBJ).
+    const cos = Math.round(Math.cos(rotation) * 1e9) / 1e9;
+    const sin = Math.round(Math.sin(rotation) * 1e9) / 1e9;
+    const rot = ([x, y, z]) => [x * cos - z * sin, y, x * sin + z * cos];
+    const base = [
+      [0, 0, 0], [W, 0, 0], [W, H, 0], [0, H, 0], // front (LED face)
+      [0, 0, -D], [W, 0, -D], [W, H, -D], [0, H, -D] // back
+    ];
+    const corners = base.map((p) => {
+      const [x, y, z] = rot(p);
+      return [px + x, py + y, pz + z];
+    });
+    return { corners, normals: BASE_NORMALS.map(rot) };
+  }
+
+  function unitScale(s) {
+    switch (s.coordSystem) {
+      case 'm': return 0.001;
+      case 'in': return 1 / 25.4;
+      case 'ft': return 1 / 304.8;
+      case 'normalized': {
+        const n = totalColsOf(s);
+        return 1 / (n * s.cabPhysW + (n - 1) * s.gap);
+      }
+      default: return 1;
+    }
+  }
+
+  function generateOBJ(s) {
+    const { rows, uvStrategy, modelName, layoutType, leftCols, centerCols, rightCols } = s;
+    const totalCols = totalColsOf(s);
+    const scale = unitScale(s);
+    const fv = (v) => (v * scale).toFixed(6);
+    const fn = (v) => Math.round(v).toFixed(1);
+
+    let obj = '# LED Wall OBJ Model\n';
+    obj += '# Generated by LED Wall OBJ Generator\n';
+    obj += `# Layout: ${layoutType === 'u-shape' ? `U-Shape (${leftCols}+${centerCols}+${rightCols})` : 'Flat'}\n`;
+    obj += `# Cabinets: ${totalCols} × ${rows} = ${totalCols * rows} total\n`;
+    obj += `\nmtllib ${modelName}.mtl\n\n`;
+
+    let vi = 1;
+    let uvi = 1;
+    let ni = 1;
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < totalCols; col++) {
+        const { corners, normals } = cabinetGeometry(s, col, row);
+        const uv = calculateUV(col, row, totalCols, rows, uvStrategy);
+
+        for (const c of corners) obj += `v ${fv(c[0])} ${fv(c[1])} ${fv(c[2])}\n`;
+
+        obj += `vt ${uv.u_min.toFixed(6)} ${uv.v_min.toFixed(6)}\n`; // bottom-left
+        obj += `vt ${uv.u_max.toFixed(6)} ${uv.v_min.toFixed(6)}\n`; // bottom-right
+        obj += `vt ${uv.u_max.toFixed(6)} ${uv.v_max.toFixed(6)}\n`; // top-right
+        obj += `vt ${uv.u_min.toFixed(6)} ${uv.v_max.toFixed(6)}\n`; // top-left
+
+        // Front, back, right, left, top, bottom (rotated with the cabinet)
+        for (const n of normals) obj += `vn ${fn(n[0])} ${fn(n[1])} ${fn(n[2])}\n`;
+
+        obj += '\nusemtl LEDMaterial\n';
+        obj += `f ${vi}/${uvi}/${ni} ${vi + 1}/${uvi + 1}/${ni} ${vi + 2}/${uvi + 2}/${ni} ${vi + 3}/${uvi + 3}/${ni}\n`;
+        obj += `f ${vi + 7}/${uvi}/${ni + 1} ${vi + 6}/${uvi + 1}/${ni + 1} ${vi + 5}/${uvi + 2}/${ni + 1} ${vi + 4}/${uvi + 3}/${ni + 1}\n`;
+        obj += `f ${vi + 1}/${uvi}/${ni + 2} ${vi + 5}/${uvi + 1}/${ni + 2} ${vi + 6}/${uvi + 2}/${ni + 2} ${vi + 2}/${uvi + 3}/${ni + 2}\n`;
+        obj += `f ${vi + 4}/${uvi}/${ni + 3} ${vi}/${uvi + 1}/${ni + 3} ${vi + 3}/${uvi + 2}/${ni + 3} ${vi + 7}/${uvi + 3}/${ni + 3}\n`;
+        obj += `f ${vi + 3}/${uvi}/${ni + 4} ${vi + 2}/${uvi + 1}/${ni + 4} ${vi + 6}/${uvi + 2}/${ni + 4} ${vi + 7}/${uvi + 3}/${ni + 4}\n`;
+        obj += `f ${vi + 4}/${uvi}/${ni + 5} ${vi + 5}/${uvi + 1}/${ni + 5} ${vi + 1}/${uvi + 2}/${ni + 5} ${vi}/${uvi + 3}/${ni + 5}\n`;
+
+        vi += 8;
+        uvi += 4;
+        ni += 6;
+      }
+    }
+    return obj;
+  }
+
+  function generateMTL(modelName, hasTexture) {
+    let mtl = '# LED Wall Material Definition\n';
+    mtl += '# Generated by LED Wall OBJ Generator\n\n';
+    mtl += 'newmtl LEDMaterial\n';
+    mtl += 'Ka 0.2 0.2 0.2\n';
+    mtl += 'Kd 0.8 0.8 0.8\n';
+    mtl += 'Ks 0.5 0.5 0.5\n';
+    mtl += 'Ns 32.0\n';
+    mtl += 'd 1.0\n';
+    mtl += 'illum 2\n';
+    if (hasTexture) mtl += `map_Kd ${modelName}_texture.png\n`;
+    return mtl;
+  }
+
+  // Preview: LED faces get their own vertices (clean UVs); cabinet bodies are a dark shell.
+  function createMesh(s) {
+    const totalCols = totalColsOf(s);
+    const positions = [];
+    const uvs = [];
+    const front = [];
+    const body = [];
+    let base = 0;
+
+    for (let row = 0; row < s.rows; row++) {
+      for (let col = 0; col < totalCols; col++) {
+        const { corners } = cabinetGeometry(s, col, row);
+        const uv = calculateUV(col, row, totalCols, s.rows, s.uvStrategy);
+        for (let i = 0; i < 4; i++) positions.push(...corners[i]);
+        uvs.push(uv.u_min, uv.v_min, uv.u_max, uv.v_min, uv.u_max, uv.v_max, uv.u_min, uv.v_max);
+        front.push(base, base + 1, base + 2, base, base + 2, base + 3);
+
+        const b = base + 4;
+        for (const c of corners) positions.push(...c);
+        for (let i = 0; i < 8; i++) uvs.push(0, 0);
+        body.push(
+          b + 7, b + 6, b + 5, b + 7, b + 5, b + 4, // back
+          b + 1, b + 5, b + 6, b + 1, b + 6, b + 2, // right
+          b + 4, b, b + 3, b + 4, b + 3, b + 7, // left
+          b + 3, b + 2, b + 6, b + 3, b + 6, b + 7, // top
+          b + 4, b + 5, b + 1, b + 4, b + 1, b // bottom
+        );
+        base += 12;
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(front.concat(body));
+    geometry.addGroup(0, front.length, 0);
+    geometry.addGroup(front.length, body.length, 1);
+    geometry.computeVertexNormals();
+
+    let faceMat;
+    if (state.textureUrl) {
+      const texture = new THREE.TextureLoader().load(state.textureUrl);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      faceMat = new THREE.MeshBasicMaterial({ map: texture });
+    } else {
+      faceMat = new THREE.MeshStandardMaterial({ color: 0x2a3644, roughness: 0.6 });
+    }
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x14181d, roughness: 0.9 });
+    const mesh = new THREE.Mesh(geometry, [faceMat, bodyMat]);
+
+    // Center on X/Z and stand the wall on the grid.
+    geometry.computeBoundingBox();
+    const bb = geometry.boundingBox;
+    mesh.position.set(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
+    return mesh;
+  }
+
+  function disposeMesh(mesh) {
+    mesh.geometry.dispose();
+    for (const m of [].concat(mesh.material)) {
+      m.map?.dispose();
+      m.dispose();
+    }
+  }
+
+  function frameCamera() {
+    if (!state.mesh) return;
+    const box = new THREE.Box3().setFromObject(state.mesh);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z, 1);
+    state.camera.near = maxDim / 1000;
+    state.camera.far = maxDim * 40;
+    state.camera.updateProjectionMatrix();
+    state.camera.position.set(center.x + maxDim * 0.7, center.y + maxDim * 0.45, center.z + maxDim * 1.5);
+    state.controls.target.copy(center);
+    state.controls.update();
+  }
+
+  function updateStats(s, objData) {
+    const { rows, cabPhysW: W, cabPhysH: H, cabDepth: D, gap, cabPxW, cabPxH, layoutType } = s;
+    const totalCols = totalColsOf(s);
+    const totalCabinets = totalCols * rows;
+    const totalH = rows * H + (rows - 1) * gap;
+    let dims;
+    if (layoutType === 'u-shape') {
+      const centerW = s.centerCols * W + (s.centerCols - 1) * gap;
+      dims = `center ${centerW.toFixed(0)} × ${totalH.toFixed(0)} mm`;
+    } else {
+      const totalW = s.cols * W + (s.cols - 1) * gap;
+      dims = `${totalW.toFixed(0)} × ${totalH.toFixed(0)} × ${D} mm`;
+    }
+    const res = `${totalCols * cabPxW} × ${rows * cabPxH}`;
+    $('statCabinets').textContent = totalCabinets.toLocaleString();
+    $('statVertices').textContent = (totalCabinets * 8).toLocaleString();
+    $('statFaces').textContent = (totalCabinets * 6).toLocaleString();
+    $('statDimensions').textContent = dims;
+    $('statResolution').textContent = `${res} px`;
+    $('statFileSize').textContent = `${(new Blob([objData]).size / 1024).toFixed(1)} KB`;
+    $('chipCabinets').textContent = totalCabinets.toLocaleString();
+    $('chipResolution').textContent = res;
+  }
+
+  // ---------- actions ----------
+  function generateModel({ reframe = true } = {}) {
+    const s = getSettings();
+    if (totalColsOf(s) * s.rows > 20000) {
+      toast('That is more than 20,000 cabinets. Reduce columns or rows.');
+      return;
+    }
+    state.modelName = s.modelName;
+    state.objData = generateOBJ(s);
+    state.mtlData = generateMTL(s.modelName, !!state.textureUrl);
+
+    if (state.mesh) {
+      state.scene.remove(state.mesh);
+      disposeMesh(state.mesh);
+    }
+    state.mesh = createMesh(s);
+    applyWireframe();
+    state.scene.add(state.mesh);
+    $('emptyNote').hidden = true;
+
+    const box = new THREE.Box3().setFromObject(state.mesh);
+    const size = box.getSize(new THREE.Vector3());
+    setGrid(Math.max(size.x, size.z) * 2);
+
+    updateStats(s, state.objData);
+    downloadButtons.forEach((b) => { b.disabled = false; });
+    if (reframe) frameCamera();
+    saveSessionState();
+  }
+
+  function applyWireframe() {
+    if (!state.mesh) return;
+    for (const m of state.mesh.material) m.wireframe = state.wireframeMode;
+  }
+
+  $('generateBtn').addEventListener('click', () => generateModel());
+  $('resetView').addEventListener('click', frameCamera);
+  $('toggleWireframe').addEventListener('click', (e) => {
+    state.wireframeMode = !state.wireframeMode;
+    e.currentTarget.setAttribute('aria-pressed', String(state.wireframeMode));
+    e.currentTarget.textContent = state.wireframeMode ? 'Solid' : 'Wireframe';
+    applyWireframe();
+  });
+
+  $('downloadOBJ').addEventListener('click', () => {
+    if (!state.objData) return;
+    downloadBlob(new Blob([state.objData], { type: 'text/plain' }), `${state.modelName}.obj`);
+  });
+  $('downloadMTL').addEventListener('click', () => {
+    if (!state.mtlData) return;
+    downloadBlob(new Blob([state.mtlData], { type: 'text/plain' }), `${state.modelName}.mtl`);
+  });
+  $('downloadZIP').addEventListener('click', async () => {
+    if (!state.objData) return;
+    const enc = new TextEncoder();
+    const name = state.modelName;
+    const files = [
+      { name: `${name}.obj`, data: enc.encode(state.objData) },
+      { name: `${name}.mtl`, data: enc.encode(state.mtlData) }
+    ];
+    if (state.textureUrl && state.mtlData.includes('map_Kd')) {
+      try {
+        files.push({ name: `${name}_texture.png`, data: await imageToPngBytes(state.textureUrl) });
+      } catch (err) {
+        console.warn('Texture not added to ZIP', err);
+        toast('The texture could not be added; the ZIP has the OBJ and MTL only.');
+      }
+    }
+    downloadBlob(makeZip(files), `${name}.zip`);
+  });
+
+  // ---------- texture ----------
+  function setTexture(url) {
+    state.textureUrl = url;
+    const img = $('texturePreview');
+    if (url) img.src = url; else img.removeAttribute('src');
+    img.hidden = !url;
+    $('textureUpload').classList.toggle('has-texture', !!url);
+    $('clearTexture').hidden = !url;
+  }
+
+  function loadTextureFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      toast('Please choose an image file.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setTexture(reader.result);
+      if (state.mesh) generateModel({ reframe: false });
+      else saveSessionState();
+      toast('Texture loaded');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  $('textureInput').addEventListener('change', (e) => {
+    loadTextureFile(e.target.files[0]);
+    e.target.value = ''; // allow choosing the same file again
+  });
+  const drop = $('textureUpload');
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop.classList.remove('over');
+    loadTextureFile(e.dataTransfer.files[0]);
+  });
+  $('clearTexture').addEventListener('click', () => {
+    setTexture(null);
+    if (state.mesh) generateModel({ reframe: false });
+    else saveSessionState();
+  });
+
+  // ---------- Pixel Mapper import ----------
+  function decodeMapId(str) {
+    try {
+      let t = String(str).trim();
+      const hash = t.indexOf('#map=');
+      if (hash >= 0) t = t.slice(hash + 5);
+      t = t.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+      if (t.length % 4) t += '='.repeat(4 - (t.length % 4));
+      const bytes = Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+      const obj = JSON.parse(new TextDecoder().decode(bytes));
+      return obj && typeof obj === 'object' ? obj : null;
+    } catch {
+      return null;
+    }
+  }
+
+  $('loadPixelID').addEventListener('click', () => {
+    const raw = $('pixelMapID').value.trim();
+    if (!raw) { toast('Paste a Map ID first.'); return; }
+    const m = decodeMapId(raw);
+    if (!m) { toast('That Map ID could not be read.'); return; }
+    const pos = (v) => Number.isFinite(Number(v)) && Number(v) > 0;
+    const physW = m.cabMmW ?? m.cabPhysW; // current and older Pixel Mapper key names
+    const physH = m.cabMmH ?? m.cabPhysH;
+    if (pos(m.cabPxW)) $('cabPxW').value = m.cabPxW;
+    if (pos(m.cabPxH)) $('cabPxH').value = m.cabPxH;
+    if (pos(physW)) $('cabPhysW').value = physW;
+    if (pos(physH)) $('cabPhysH').value = physH;
+    if (pos(m.cols)) $('cols').value = m.cols;
+    if (pos(m.rows)) $('rows').value = m.rows;
+    if (m.screenName) $('modelName').value = safeName(String(m.screenName).toLowerCase());
+    setSeg(layoutSeg, 'flat');
+    syncLayoutUI();
+    autoSaveCurrentSettings();
+    if (state.mesh) generateModel();
+    toast('Settings loaded from the Map ID');
+  });
+
+  // ---------- saved layouts ----------
+  const getSavedLayouts = () => {
+    const v = store.json(KEY_LAYOUTS, {});
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  };
+
+  function updateSavedLayoutsList() {
+    const layouts = getSavedLayouts();
+    const select = $('savedLayouts');
+    const current = select.value;
+    select.replaceChildren(new Option('Select a saved layout', ''));
+    Object.keys(layouts).sort().forEach((name) => select.appendChild(new Option(name, name)));
+    if (current && layouts[current]) select.value = current;
+  }
+
+  $('saveLayout').addEventListener('click', () => {
+    const name = $('layoutName').value.trim();
+    if (!name) { toast('Enter a layout name first.'); return; }
+    const layouts = getSavedLayouts();
+    layouts[name] = { ...getSettings(), savedAt: new Date().toISOString() };
+    if (!store.set(KEY_LAYOUTS, JSON.stringify(layouts))) { toast('Could not save: browser storage is full or blocked.'); return; }
+    updateSavedLayoutsList();
+    $('savedLayouts').value = name;
+    toast(`Saved “${name}”`);
+  });
+
+  $('loadLayout').addEventListener('click', () => {
+    const name = $('savedLayouts').value;
+    if (!name) { toast('Select a layout to load.'); return; }
+    const s = getSavedLayouts()[name];
+    if (!s) { toast('That layout could not be found.'); return; }
+    applySettings(s);
+    $('layoutName').value = name;
+    autoSaveCurrentSettings();
+    if (state.mesh) generateModel();
+    toast(`Loaded “${name}”`);
+  });
+
+  $('deleteLayout').addEventListener('click', () => {
+    const name = $('savedLayouts').value;
+    if (!name) { toast('Select a layout to delete.'); return; }
+    if (!confirm(`Delete the saved layout “${name}”?`)) return;
+    const layouts = getSavedLayouts();
+    delete layouts[name];
+    store.set(KEY_LAYOUTS, JSON.stringify(layouts));
+    updateSavedLayoutsList();
+    $('layoutName').value = '';
+    toast(`Deleted “${name}”`);
+  });
+
+  // ---------- session persistence ----------
+  function autoSaveCurrentSettings() {
+    store.set(KEY_CURRENT, JSON.stringify(getSettings()));
+  }
+
+  function saveSessionState() {
+    const session = {
+      settings: getSettings(),
+      textureUrl: state.textureUrl,
+      hasModel: !!state.mesh,
+      timestamp: new Date().toISOString()
+    };
+    // Large textures can exceed the storage quota; keep the rest of the session in that case.
+    if (!store.set(KEY_SESSION, JSON.stringify(session))) {
+      store.set(KEY_SESSION, JSON.stringify({ ...session, textureUrl: null }));
+    }
+  }
+
+  function restoreSession() {
+    const session = store.json(KEY_SESSION, null);
+    const current = store.json(KEY_CURRENT, null);
+    // KEY_CURRENT is written on every edit, so it is the most recent form state.
+    const settings = current || session?.settings;
+    if (settings) applySettings(settings);
+    if (session?.textureUrl) setTexture(session.textureUrl);
+    // First visit: show the default wall instead of an empty scene.
+    if (session?.hasModel || !session) generateModel();
+  }
+
+  function setupAutoSave() {
+    [
+      'cabPxW', 'cabPxH', 'cabPhysW', 'cabPhysH', 'cabDepth', 'cols', 'rows', 'gap',
+      'leftCols', 'centerCols', 'rightCols', 'layoutType', 'uvStrategy', 'modelName', 'coordSystem'
+    ].forEach((id) => {
+      const el = $(id);
+      el.addEventListener('change', autoSaveCurrentSettings);
+      el.addEventListener('input', autoSaveCurrentSettings);
+    });
+  }
+
+  // ---------- init ----------
+  initSeg(layoutSeg);
+  initSeg(uvSeg);
+  layoutSeg.addEventListener('change', syncLayoutUI);
+  uvSeg.addEventListener('change', syncLayoutUI);
+  initScene();
+  updateSavedLayoutsList();
+  restoreSession();
+  syncLayoutUI();
+  setupAutoSave();
+</script>
+</body>
+</html>

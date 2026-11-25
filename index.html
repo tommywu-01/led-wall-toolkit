@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LED Wall Toolkit · free pixel mapper &amp; 3D tools</title>
+  <meta name="description" content="Free, open-source browser tools for LED video walls: pixel-exact pixel maps, OBJ/MTL models for media servers, and a 3D stage layout studio. No install, no sign-up.">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    main { max-width: 1080px; margin: 0 auto; padding: 64px 20px 40px; }
+    .eyebrow { font: 600 12px var(--mono); letter-spacing: 1.4px; color: var(--accent); text-transform: uppercase; }
+    h1 { font-size: clamp(34px, 5vw, 56px); line-height: 1.05; letter-spacing: -1.2px; margin: 14px 0 16px; }
+    .lede { font-size: 18px; color: var(--muted); max-width: 640px; margin: 0 0 40px; }
+    .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+    .tool {
+      display: flex; flex-direction: column; gap: 10px; padding: 22px; color: var(--text);
+      background: var(--panel); border: 1px solid var(--line); border-radius: 14px; transition: 0.15s;
+    }
+    .tool:hover { border-color: var(--accent); transform: translateY(-2px); text-decoration: none; }
+    .tool h2 { margin: 0; font-size: 19px; }
+    .tool p { margin: 0; color: var(--muted); }
+    .tool ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+    .tool .go { margin-top: auto; padding-top: 8px; color: var(--accent); font-weight: 600; }
+    .icon { width: 40px; height: 40px; border-radius: 9px; background: var(--accent-soft); display: grid; place-items: center; color: var(--accent); font: 600 18px var(--mono); }
+    .band {
+      margin-top: 44px; padding: 22px; border-radius: 14px; border: 1px solid var(--line);
+      background: linear-gradient(120deg, rgba(57,213,255,0.08), transparent 60%), var(--panel);
+      display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between;
+    }
+    .band p { margin: 0; color: var(--muted); max-width: 620px; }
+    .band strong { color: var(--text); }
+    footer { max-width: 1080px; margin: 0 auto; padding: 0 20px 40px; color: var(--faint); font-size: 13px; }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="brand-mark"></span>LED Wall Toolkit</a>
+  <nav class="nav">
+    <a href="pixel-mapper.html">Pixel Mapper</a>
+    <a href="obj-generator.html">OBJ Generator</a>
+    <a href="stage-studio.html">Stage Studio</a>
+  </nav>
+  <span class="spacer"></span>
+  <a class="cta" href="https://ledwall.nyc/?utm_source=github&utm_medium=toolkit" target="_blank" rel="noopener"><span>Need a wall for an event in NYC?</span> <b>ledwall.nyc →</b></a>
+</header>
+
+<main>
+  <div class="eyebrow">Free · open source · runs in your browser</div>
+  <h1>Plan an LED video wall<br>in minutes.</h1>
+  <p class="lede">Make a pixel-exact pixel map, a 3D model for your media server, and a full stage layout. Nothing to install, no sign-up, and your files never leave your computer.</p>
+
+  <div class="tools">
+    <a class="tool" href="pixel-mapper.html">
+      <div class="icon">▦</div>
+      <h2>Pixel Mapper</h2>
+      <p>Draw the exact pixel map for any cabinet grid and export a 1:1 PNG.</p>
+      <ul>
+        <li>Cabinet numbers, signal path and data ports</li>
+        <li>Fit cabinets to a target size in ft, m or in</li>
+        <li>Power, amps and build-time estimates</li>
+        <li>CSV cabinet list and shareable links</li>
+      </ul>
+      <span class="go">Open Pixel Mapper →</span>
+    </a>
+    <a class="tool" href="obj-generator.html">
+      <div class="icon">◧</div>
+      <h2>OBJ Generator</h2>
+      <p>Turn a flat or U-shaped wall into an OBJ + MTL with clean UVs.</p>
+      <ul>
+        <li>Per-cabinet boxes at real scale (mm, m or 0–1)</li>
+        <li>Continuous UVs that line up with your pixel map</li>
+        <li>Live 3D preview with your texture</li>
+      </ul>
+      <span class="go">Open OBJ Generator →</span>
+    </a>
+    <a class="tool" href="stage-studio.html">
+      <div class="icon">◩</div>
+      <h2>Stage Studio</h2>
+      <p>Lay out several walls, floors and ceilings in 3D and export them all.</p>
+      <ul>
+        <li>Snapping, pivots and exact transforms</li>
+        <li>Save and load layouts</li>
+        <li>Optional AI preview with your own key</li>
+      </ul>
+      <span class="go">Open Stage Studio →</span>
+    </a>
+  </div>
+
+  <div class="band">
+    <p><strong>Built and maintained by ledwall.nyc</strong>, LED wall rental in New York City. The tools are free for everyone, and pull requests are welcome.</p>
+    <a class="btn primary" href="https://ledwall.nyc/?utm_source=github&utm_medium=toolkit" target="_blank" rel="noopener">Visit ledwall.nyc</a>
+  </div>
+</main>
+
+<footer>
+  Original tool by <a href="https://github.com/tommywu-01" target="_blank" rel="noopener">Tommy Wu</a> · Maintained by <a href="https://ledwall.nyc/?utm_source=github&utm_medium=toolkit" target="_blank" rel="noopener">ledwall.nyc</a> · <a href="https://github.com/tommywu-01/led-wall-toolkit">Source on GitHub</a> · MIT License
+</footer>
+</body>
+</html>

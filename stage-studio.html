@@ -1,0 +1,1332 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stage Studio · LED Wall Toolkit</title>
+  <meta name="description" content="Free browser tool for laying out LED walls, stage floors and ceilings in 3D. Snap to grid, set pivots, save layouts and export each surface as an OBJ with UV mapping.">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    [hidden] { display: none !important; }
+    .viewport { position: relative; flex: 1; min-height: 0; }
+    .viewport > canvas#preview-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #axis-gizmo {
+      position: absolute; left: 14px; bottom: 14px; width: 92px; height: 92px; pointer-events: none;
+      border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: rgba(7, 9, 12, 0.6);
+    }
+    .help {
+      position: absolute; top: 12px; right: 12px; max-width: 220px; pointer-events: none;
+      background: rgba(14, 18, 23, 0.85); border: 1px solid var(--line); border-radius: var(--radius-sm);
+      padding: 8px 10px; font-size: 11.5px; color: var(--muted); line-height: 1.6;
+    }
+    .help b { color: var(--text); font: 600 11px var(--mono); }
+    .chip.on { border-color: var(--accent); color: var(--accent); }
+    .wall-list { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
+    .wall-item {
+      display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 8px;
+      border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg);
+    }
+    .wall-item.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .wall-swatch { width: 10px; height: 26px; border-radius: 3px; flex: none; }
+    .wall-info { flex: 1; min-width: 0; text-align: left; background: none; border: 0; color: var(--text); cursor: pointer; padding: 2px 0; font: inherit; }
+    .wall-info b { display: block; font-size: 13px; }
+    .wall-info small { color: var(--muted); font: 11.5px var(--mono); }
+    .wall-item .btn { padding: 5px 8px; font-size: 12px; }
+    .layout-info { display: grid; gap: 8px; font-size: 12px; color: var(--muted); }
+    .layout-info b { color: var(--text); }
+    .layout-info .mono { font-family: var(--mono); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--line-strong); filter: none; }
+    .modal {
+      position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 24px;
+      background: rgba(0, 0, 0, 0.88);
+    }
+    .modal-card { display: grid; gap: 10px; max-width: min(1200px, 100%); max-height: 100%; }
+    .modal-card img { max-width: 100%; max-height: calc(100vh - 120px); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .warn { color: var(--warn); }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="brand-mark"></span>LED Wall Toolkit</a>
+  <nav class="nav">
+    <a href="pixel-mapper.html">Pixel Mapper</a>
+    <a href="obj-generator.html">OBJ Generator</a>
+    <a href="stage-studio.html" aria-current="page">Stage Studio</a>
+  </nav>
+  <span class="spacer"></span>
+  <a class="cta" href="https://ledwall.nyc/?utm_source=github&utm_medium=toolkit" target="_blank" rel="noopener"><span>Need a wall for an event in NYC?</span> <b>ledwall.nyc →</b></a>
+</header>
+
+<div class="app">
+  <aside class="sidebar">
+    <details class="group" open>
+      <summary>Units</summary>
+      <div class="group-body">
+        <div class="seg" id="units">
+          <button type="button" data-value="metric" aria-pressed="true">Metric (m, mm)</button>
+          <button type="button" data-value="imperial" aria-pressed="false">Imperial (ft, in)</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>New surface</summary>
+      <div class="group-body">
+        <div class="field">
+          <span>Type</span>
+          <div class="seg" id="surfaceType">
+            <button type="button" data-value="wall" aria-pressed="true">Wall</button>
+            <button type="button" data-value="floor" aria-pressed="false">Stage floor</button>
+            <button type="button" data-value="ceiling" aria-pressed="false">Ceiling</button>
+          </div>
+        </div>
+        <div class="row2">
+          <label class="field"><span>Width (<span data-unit="len">m</span>)</span><input type="number" id="length" value="4.8" step="0.1" min="0.01"></label>
+          <label class="field"><span id="heightLabel">Height (<span data-unit="len">m</span>)</span><input type="number" id="height" value="2.7" step="0.1" min="0.01"></label>
+        </div>
+        <div class="row2">
+          <label class="field"><span>Cabinet width (<span data-unit="tile">mm</span>)</span><input type="number" id="tileWidth" value="600" step="0.1" min="0.1"></label>
+          <label class="field"><span>Cabinet height (<span data-unit="tile">mm</span>)</span><input type="number" id="tileHeight" value="337.5" step="0.1" min="0.1"></label>
+        </div>
+        <div class="row2">
+          <label class="field"><span>Cabinet pixels wide</span><input type="number" id="resX" value="320" step="1" min="1"></label>
+          <label class="field"><span>Cabinet pixels high</span><input type="number" id="resY" value="180" step="1" min="1"></label>
+        </div>
+        <div class="field">
+          <span>Pivot (the surface's origin point)</span>
+          <div class="seg" id="pivotDepth" title="Front (downstage, toward the audience) or back (upstage) edge. Applies to floors and ceilings.">
+            <button type="button" data-value="downstage" aria-pressed="true">Front edge</button>
+            <button type="button" data-value="upstage" aria-pressed="false">Back edge</button>
+          </div>
+          <div class="seg" id="pivotSide">
+            <button type="button" data-value="left" aria-pressed="false">Left</button>
+            <button type="button" data-value="center" aria-pressed="true">Center</button>
+            <button type="button" data-value="right" aria-pressed="false">Right</button>
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" id="splitTiles" checked> Split into cabinets (one quad each)</label>
+        <dl class="kv">
+          <dt>Cabinets</dt><dd id="info-tiles">–</dd>
+          <dt>Resolution</dt><dd id="info-resolution">–</dd>
+          <dt>4K (3840×2160) outputs</dt><dd id="info-uhd">–</dd>
+        </dl>
+        <p class="hint" id="info-note">The size is rounded to whole cabinets.</p>
+        <button type="button" class="btn primary block" id="addWall">Add surface</button>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>Surfaces</summary>
+      <div class="group-body">
+        <div class="wall-list" id="wall-list"></div>
+        <div id="transform-panel" hidden>
+          <div class="field">
+            <span>Position (<span data-unit="len">m</span>)</span>
+            <div class="row3">
+              <input type="number" id="wall-pos-x" step="0.1" aria-label="Position X" placeholder="X">
+              <input type="number" id="wall-pos-y" step="0.1" aria-label="Position Y" placeholder="Y">
+              <input type="number" id="wall-pos-z" step="0.1" aria-label="Position Z" placeholder="Z">
+            </div>
+          </div>
+          <div class="field" style="margin-top: 8px;">
+            <span>Rotation (degrees)</span>
+            <div class="row3">
+              <input type="number" id="wall-rot-x" step="1" aria-label="Rotation X" placeholder="X">
+              <input type="number" id="wall-rot-y" step="1" aria-label="Rotation Y" placeholder="Y">
+              <input type="number" id="wall-rot-z" step="1" aria-label="Rotation Z" placeholder="Z">
+            </div>
+          </div>
+          <p class="hint" style="margin-top: 8px;">X = left/right, Y = up, Z = toward the audience. Keys: G move, R rotate, T show/hide handles.</p>
+        </div>
+      </div>
+    </details>
+
+    <details class="group">
+      <summary>Snapping</summary>
+      <div class="group-body">
+        <label class="check"><input type="checkbox" id="snapEnabled" checked> Snap to grid while moving</label>
+        <label class="field"><span>Snap step (<span data-unit="len">m</span>)</span><input type="number" id="snapSize" value="0.1" step="0.05" min="0.01"></label>
+        <p class="hint">Rotation snaps in 15° steps. Hold Shift while dragging to move freely.</p>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>Layout &amp; export</summary>
+      <div class="group-body">
+        <label class="field"><span>OBJ units</span>
+          <select id="objUnits">
+            <option value="m">Meters</option>
+            <option value="cm">Centimeters</option>
+            <option value="mm">Millimeters</option>
+            <option value="ft">Feet</option>
+            <option value="in">Inches</option>
+          </select>
+        </label>
+        <button type="button" class="btn primary" id="exportAll">Export all surfaces (ZIP)</button>
+        <div class="row2">
+          <button type="button" class="btn" id="exportJson">Save layout file</button>
+          <button type="button" class="btn" id="importJson">Open layout file</button>
+        </div>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+        <div class="row2">
+          <button type="button" class="btn" id="saveLayout">Save in browser</button>
+          <button type="button" class="btn" id="loadLayout">Restore from browser</button>
+        </div>
+        <button type="button" class="btn danger" id="resetLayout">Clear layout</button>
+        <p class="hint">The layout also saves automatically in this browser. A layout file (.json) can be shared or opened on another computer.</p>
+      </div>
+    </details>
+
+    <details class="group">
+      <summary>Layout info</summary>
+      <div class="group-body">
+        <div class="layout-info" id="layout-info">No surfaces yet.</div>
+      </div>
+    </details>
+
+    <details class="group">
+      <summary>AI visualization (optional)</summary>
+      <div class="group-body">
+        <p class="hint">Sends a screenshot of the current view plus the layout to Google's Gemini image model, which returns a photorealistic render of the walls in a venue. Uses your own API key; Google may charge for usage.</p>
+        <label class="field"><span>Your Gemini API key</span>
+          <input type="password" id="geminiKey" autocomplete="off" spellcheck="false" placeholder="Paste your key">
+        </label>
+        <p class="hint">Your key stays in this browser and is sent only to Google's API.</p>
+        <button type="button" class="btn ghost" id="forgetKey">Forget key</button>
+        <label class="field"><span>Setting</span>
+          <select id="envPreset">
+            <option value="custom">Custom (describe it in the prompt)</option>
+            <option value="art-gallery">Gallery</option>
+            <option value="concert-venue">Concert stage</option>
+            <option value="studio">Event studio</option>
+            <option value="conference">Conference / keynote</option>
+            <option value="retail">Retail space</option>
+            <option value="outdoor">Outdoor facade</option>
+          </select>
+        </label>
+        <label class="field"><span>What the screens show</span>
+          <textarea id="aiPrompt" rows="3" placeholder="Describe the content on the LED walls">Abstract colorful patterns with geometric shapes</textarea>
+        </label>
+        <button type="button" class="btn primary" id="ai-gen-btn" disabled>Generate visualization</button>
+        <p class="hint" id="ai-status">Enter an API key to enable.</p>
+      </div>
+    </details>
+
+    <p class="credit">Free & open source · maintained by <a href="https://ledwall.nyc/?utm_source=github&utm_medium=toolkit" target="_blank" rel="noopener">ledwall.nyc</a>, LED wall rental in NYC · original tool by <a href="https://github.com/tommywu-01" target="_blank" rel="noopener">Tommy Wu</a> · <a href="https://github.com/tommywu-01/led-wall-toolkit">source</a></p>
+  </aside>
+
+  <section class="stage">
+    <div class="toolbar">
+      <button type="button" class="btn primary" id="addWallTop">Add surface</button>
+      <div class="seg" id="modeSeg" style="width: 170px;">
+        <button type="button" data-value="translate" aria-pressed="true" title="Move (G)">Move</button>
+        <button type="button" data-value="rotate" aria-pressed="false" title="Rotate (R)">Rotate</button>
+      </div>
+      <button type="button" class="btn" id="resetView">Reset view</button>
+      <span class="spacer"></span>
+      <div class="stats">
+        <span class="chip">Surfaces <b id="chip-walls">0</b></span>
+        <span class="chip">Pixels <b id="chip-pixels">0</b></span>
+        <span class="chip" id="snap-indicator"><span id="snap-text">Snap off</span></span>
+      </div>
+    </div>
+    <div class="viewport" id="viewport">
+      <canvas id="preview-canvas"></canvas>
+      <canvas id="axis-gizmo"></canvas>
+      <div class="help">
+        Drag: orbit · Right-drag: pan · Scroll: zoom<br>
+        Click a surface to select it<br>
+        <b>G</b> move · <b>R</b> rotate · <b>Shift</b> no snap
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="modal" id="ai-preview-modal" hidden>
+  <div class="modal-card">
+    <div class="modal-actions">
+      <button type="button" class="btn primary" id="ai-download">Download PNG</button>
+      <button type="button" class="btn" id="ai-close">Close</button>
+    </div>
+    <img id="ai-preview-image" alt="AI-generated visualization of the LED layout">
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- helpers ----------
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
+    del(k) { try { localStorage.removeItem(k); } catch { /* blocked */ } }
+  };
+  const LAYOUT_STORAGE_KEY = 'ledWallStudioLayoutV1';
+  const KEY_GEMINI = 'ledToolkit.geminiKey';
+  const KEY_PROMPT = 'ledToolkit.studio.prompt';
+  const KEY_ENV = 'ledToolkit.studio.environment';
+  const KEY_UNITS = 'ledToolkit.studio.units';
+
+  let toastTimer = 0;
+  function toast(msg, ms = 2600) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
+
+  function initSeg(el) {
+    el.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-value]');
+      if (!btn) return;
+      setSeg(el, btn.dataset.value);
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+  const getSeg = (el) => el.querySelector('button[aria-pressed="true"]')?.dataset.value;
+  function setSeg(el, value) {
+    el.querySelectorAll('button[data-value]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.value === value)));
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Minimal "stored" (uncompressed) ZIP writer.
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes) {
+    let c = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  function makeZip(files) {
+    const enc = new TextEncoder();
+    const now = new Date();
+    const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+    const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+    const parts = [];
+    const central = [];
+    let offset = 0;
+    for (const f of files) {
+      const name = enc.encode(f.name);
+      const crc = crc32(f.data);
+      const size = f.data.length;
+      const local = new Uint8Array(30 + name.length);
+      const lv = new DataView(local.buffer);
+      lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true);
+      lv.setUint16(8, 0, true); lv.setUint16(10, dosTime, true); lv.setUint16(12, dosDate, true);
+      lv.setUint32(14, crc, true); lv.setUint32(18, size, true); lv.setUint32(22, size, true);
+      lv.setUint16(26, name.length, true); lv.setUint16(28, 0, true);
+      local.set(name, 30);
+      const cen = new Uint8Array(46 + name.length);
+      const cv = new DataView(cen.buffer);
+      cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+      cv.setUint16(8, 0x0800, true); cv.setUint16(10, 0, true); cv.setUint16(12, dosTime, true);
+      cv.setUint16(14, dosDate, true); cv.setUint32(16, crc, true); cv.setUint32(20, size, true);
+      cv.setUint32(24, size, true); cv.setUint16(28, name.length, true); cv.setUint32(42, offset, true);
+      cen.set(name, 46);
+      parts.push(local, f.data);
+      central.push(cen);
+      offset += local.length + size;
+    }
+    const cenSize = central.reduce((s, c) => s + c.length, 0);
+    const end = new Uint8Array(22);
+    const ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true);
+    ev.setUint32(12, cenSize, true); ev.setUint32(16, offset, true);
+    return new Blob([...parts, ...central, end], { type: 'application/zip' });
+  }
+
+  // ---------- units (everything is stored in meters internally) ----------
+  const unitsSeg = $('units');
+  const UNITS = {
+    metric: { len: 1, lenLabel: 'm', tile: 0.001, tileLabel: 'mm' },
+    imperial: { len: 0.3048, lenLabel: 'ft', tile: 0.0254, tileLabel: 'in' }
+  };
+  const LEN_INPUTS = ['length', 'height', 'snapSize', 'wall-pos-x', 'wall-pos-y', 'wall-pos-z'];
+  const TILE_INPUTS = ['tileWidth', 'tileHeight'];
+  let unitKey = 'metric';
+  const units = () => UNITS[unitKey];
+  const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
+  const lenToM = (v) => v * units().len;
+  const mToLen = (m) => m / units().len;
+  const tileToM = (v) => v * units().tile;
+  const fmtLen = (m) => `${round(mToLen(m), 2)} ${units().lenLabel}`;
+  const readLenM = (id, fallback) => {
+    const v = parseFloat($(id).value);
+    return Number.isFinite(v) ? lenToM(v) : fallback;
+  };
+
+  function setUnits(next) {
+    if (!(next in UNITS)) next = 'metric';
+    setSeg(unitsSeg, next);
+    if (next === unitKey) return;
+    const prev = units();
+    unitKey = next;
+    const cur = units();
+    for (const id of LEN_INPUTS) {
+      const v = parseFloat($(id).value);
+      if (Number.isFinite(v)) $(id).value = round((v * prev.len) / cur.len, 3);
+    }
+    for (const id of TILE_INPUTS) {
+      const v = parseFloat($(id).value);
+      if (Number.isFinite(v)) $(id).value = round((v * prev.tile) / cur.tile, 2);
+    }
+    document.querySelectorAll('[data-unit="len"]').forEach((el) => { el.textContent = cur.lenLabel; });
+    document.querySelectorAll('[data-unit="tile"]').forEach((el) => { el.textContent = cur.tileLabel; });
+    store.set(KEY_UNITS, next);
+    applySnap();
+    updateInfo();
+    updateWallList();
+  }
+
+  // ---------- scene ----------
+  const viewport = $('viewport');
+  const canvas = $('preview-canvas');
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b0f14);
+
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 1000);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+
+  function resetView() {
+    camera.position.set(5, 4, 6);
+    controls.target.set(0, 1.5, 0);
+    controls.update();
+  }
+  resetView();
+
+  function resize() {
+    const w = viewport.clientWidth;
+    const h = viewport.clientHeight;
+    if (!w || !h) return;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h, false);
+  }
+  resize();
+  new ResizeObserver(resize).observe(viewport);
+
+  const transformControls = new TransformControls(camera, canvas);
+  transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
+  transformControls.addEventListener('dragging-changed', (event) => {
+    controls.enabled = !event.value;
+    if (!event.value) saveLayoutToStorage();
+  });
+  transformControls.addEventListener('objectChange', () => {
+    if (selectedWallId) {
+      updateTransformInputs();
+      renderLayoutInfo();
+    }
+  });
+  scene.add(transformControls);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(5, 10, 5);
+  scene.add(dirLight);
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+  fillLight.position.set(-5, 5, -5);
+  scene.add(fillLight);
+
+  scene.add(new THREE.GridHelper(20, 40, 0x2c3744, 0x161c23));
+
+  const axesGroup = new THREE.Group();
+  const addAxis = (end, color) => {
+    const geom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), end]);
+    axesGroup.add(new THREE.Line(geom, new THREE.LineBasicMaterial({ color })));
+  };
+  addAxis(new THREE.Vector3(2, 0, 0), 0xff5d6c);
+  addAxis(new THREE.Vector3(0, 2, 0), 0x3ddc97);
+  addAxis(new THREE.Vector3(0, 0, 2), 0x39a0ff);
+  axesGroup.add(new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffb547 })));
+  scene.add(axesGroup);
+
+  // Axis gizmo (bottom-left)
+  const gizmoRenderer = new THREE.WebGLRenderer({ canvas: $('axis-gizmo'), alpha: true, antialias: true });
+  gizmoRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  gizmoRenderer.setSize(92, 92, false);
+  const gizmoScene = new THREE.Scene();
+  const gizmoCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
+  const makeLabel = (text, color) => {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 64;
+    const g = c.getContext('2d');
+    g.font = 'bold 44px system-ui, sans-serif';
+    g.fillStyle = color;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, 32, 34);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c) }));
+    sprite.scale.set(0.3, 0.3, 1);
+    return sprite;
+  };
+  [[new THREE.Vector3(1, 0, 0), 0xff5d6c, '#ff5d6c', 'X'], [new THREE.Vector3(0, 1, 0), 0x3ddc97, '#3ddc97', 'Y'], [new THREE.Vector3(0, 0, 1), 0x39a0ff, '#39a0ff', 'Z']]
+    .forEach(([dir, hex, css, label]) => {
+      gizmoScene.add(new THREE.ArrowHelper(dir, new THREE.Vector3(), 0.8, hex, 0.2, 0.15));
+      const sprite = makeLabel(label, css);
+      sprite.position.copy(dir).multiplyScalar(1.1);
+      gizmoScene.add(sprite);
+    });
+
+  // ---------- surfaces ----------
+  const walls = {};
+  let wallCounter = 0;
+  let selectedWallId = null;
+  const WALL_COLORS = [0x39d5ff, 0xff6b9d, 0x4ecdc4, 0xffe66d, 0xa8e6cf, 0xff9f1c, 0x8b7bff];
+  const TYPES = ['wall', 'floor', 'ceiling'];
+  const TYPE_LABEL = { wall: 'Wall', floor: 'Floor', ceiling: 'Ceiling' };
+  const PIVOTS = ['downstage-center', 'downstage-left', 'downstage-right', 'upstage-center', 'upstage-left', 'upstage-right'];
+
+  function calculatePivotOffset(length, height, pivot, type) {
+    let x = 0;
+    let z = 0;
+    if (pivot.includes('center')) x = -length / 2;
+    else if (pivot.includes('left')) x = -length;
+    if (type !== 'wall' && pivot.includes('upstage')) z = -height;
+    return { x, y: 0, z };
+  }
+
+  function createVerticesForType(type, x1, x2, y1, y2, z) {
+    if (type === 'floor') {
+      return [{ x: x1, y: z, z: y2 }, { x: x1, y: z, z: y1 }, { x: x2, y: z, z: y1 }, { x: x2, y: z, z: y2 }];
+    }
+    if (type === 'ceiling') {
+      return [{ x: x1, y: z, z: y1 }, { x: x1, y: z, z: y2 }, { x: x2, y: z, z: y2 }, { x: x2, y: z, z: y1 }];
+    }
+    return [{ x: x1, y: y2, z }, { x: x1, y: y1, z }, { x: x2, y: y1, z }, { x: x2, y: y2, z }];
+  }
+
+  const tileCounts = (p) => ({
+    tilesX: Math.max(1, Math.round(p.length / p.tileWidth)),
+    tilesY: Math.max(1, Math.round(p.height / p.tileHeight))
+  });
+
+  function quadGeometry(vertices) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices.flatMap((v) => [v.x, v.y, v.z])), 3));
+    geometry.setIndex([0, 1, 2, 0, 2, 3]);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  function createWallMesh(params) {
+    const { length, height, tileWidth, tileHeight, splitTiles, type, pivot } = params;
+    const { tilesX, tilesY } = tileCounts(params);
+    const pivotOffset = calculatePivotOffset(length, height, pivot, type);
+    const group = new THREE.Group();
+    const color = params.color ?? WALL_COLORS[0];
+    // One shared material per surface instead of one per cabinet.
+    const material = new THREE.MeshStandardMaterial({
+      color, emissive: color, emissiveIntensity: 0.2, side: THREE.DoubleSide, metalness: 0.2, roughness: 0.8
+    });
+
+    if (splitTiles) {
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0x0b0f14 });
+      for (let row = 0; row < tilesY; row++) {
+        for (let col = 0; col < tilesX; col++) {
+          const geometry = quadGeometry(createVerticesForType(
+            type,
+            col * tileWidth + pivotOffset.x, (col + 1) * tileWidth + pivotOffset.x,
+            row * tileHeight + pivotOffset.y, (row + 1) * tileHeight + pivotOffset.y,
+            pivotOffset.z
+          ));
+          group.add(new THREE.Mesh(geometry, material));
+          group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry), edgeMat));
+        }
+      }
+    } else {
+      group.add(new THREE.Mesh(quadGeometry(createVerticesForType(
+        type, pivotOffset.x, length + pivotOffset.x, pivotOffset.y, height + pivotOffset.y, pivotOffset.z
+      )), material));
+    }
+    return group;
+  }
+
+  function disposeWall(group) {
+    const mats = new Set();
+    group.traverse((c) => {
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) mats.add(c.material);
+    });
+    mats.forEach((m) => m.dispose());
+  }
+
+  function sanitizeParams(p, index) {
+    const pos = (v, d) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+    const colorIndex = Number.isInteger(p?.colorIndex) ? Math.abs(p.colorIndex) % WALL_COLORS.length : index % WALL_COLORS.length;
+    return {
+      length: pos(p?.length, 3.6),
+      height: pos(p?.height, 2.7),
+      tileWidth: pos(p?.tileWidth, 0.5),
+      tileHeight: pos(p?.tileHeight, 0.5),
+      splitTiles: p?.splitTiles !== false,
+      type: TYPES.includes(p?.type) ? p.type : 'wall',
+      pivot: PIVOTS.includes(p?.pivot) ? p.pivot : 'downstage-center',
+      resX: Math.round(pos(p?.resX, 192)),
+      resY: Math.round(pos(p?.resY, 192)),
+      color: Number.isInteger(p?.color) && p.color >= 0 && p.color <= 0xffffff ? p.color : WALL_COLORS[colorIndex],
+      colorIndex
+    };
+  }
+
+  function readNewSurfaceParams() {
+    const length = readLenM('length', NaN);
+    const height = readLenM('height', NaN);
+    const tw = parseFloat($('tileWidth').value);
+    const th = parseFloat($('tileHeight').value);
+    return {
+      length, height,
+      tileWidth: Number.isFinite(tw) ? tileToM(tw) : NaN,
+      tileHeight: Number.isFinite(th) ? tileToM(th) : NaN,
+      splitTiles: $('splitTiles').checked,
+      type: getSeg($('surfaceType')),
+      pivot: `${getSeg($('pivotDepth'))}-${getSeg($('pivotSide'))}`,
+      resX: parseInt($('resX').value, 10),
+      resY: parseInt($('resY').value, 10)
+    };
+  }
+
+  function addWall() {
+    const p = readNewSurfaceParams();
+    if (![p.length, p.height, p.tileWidth, p.tileHeight].every((v) => Number.isFinite(v) && v > 0)) {
+      toast('Enter a positive size and cabinet size first.');
+      return;
+    }
+    if (!(p.resX > 0 && p.resY > 0)) {
+      toast('Enter the cabinet pixel resolution first.');
+      return;
+    }
+    const { tilesX, tilesY } = tileCounts(p);
+    if (p.splitTiles && tilesX * tilesY > 20000) {
+      toast('Over 20,000 cabinets. Turn off "Split into cabinets" or use a larger cabinet size.');
+      return;
+    }
+    const colorIndex = Object.keys(walls).length % WALL_COLORS.length;
+    const params = { ...p, length: round(p.length, 4), height: round(p.height, 4), color: WALL_COLORS[colorIndex], colorIndex };
+
+    const wallId = `wall_${wallCounter++}`;
+    const wallMesh = createWallMesh(params);
+    wallMesh.userData = { ...params, wallId };
+    walls[wallId] = wallMesh;
+    scene.add(wallMesh);
+
+    selectWall(wallId);
+    saveLayoutToStorage();
+  }
+
+  function selectWall(wallId) {
+    const wallMesh = walls[wallId];
+    if (!wallMesh) return;
+    selectedWallId = wallId;
+    transformControls.attach(wallMesh);
+    updateWallList();
+    updateTransformInputs();
+    $('transform-panel').hidden = false;
+  }
+
+  function deleteWall(wallId) {
+    const wallMesh = walls[wallId];
+    if (!wallMesh) return;
+    if (selectedWallId === wallId) {
+      selectedWallId = null;
+      transformControls.detach();
+      $('transform-panel').hidden = true;
+    }
+    scene.remove(wallMesh);
+    disposeWall(wallMesh);
+    delete walls[wallId];
+    updateWallList();
+    saveLayoutToStorage();
+  }
+
+  const wallLabel = (wallId, index) => `${TYPE_LABEL[walls[wallId].userData.type] || 'Wall'} ${index + 1}`;
+
+  function updateWallList() {
+    const listEl = $('wall-list');
+    listEl.replaceChildren();
+    const ids = Object.keys(walls);
+    if (ids.length === 0) {
+      const p = document.createElement('p');
+      p.className = 'hint';
+      p.textContent = 'No surfaces yet. Set the size above and press "Add surface".';
+      listEl.append(p);
+    }
+    ids.forEach((wallId, index) => {
+      const d = walls[wallId].userData;
+      const item = document.createElement('div');
+      item.className = 'wall-item' + (wallId === selectedWallId ? ' selected' : '');
+
+      const swatch = document.createElement('span');
+      swatch.className = 'wall-swatch';
+      swatch.style.background = `#${new THREE.Color(d.color).getHexString()}`;
+
+      const info = document.createElement('button');
+      info.type = 'button';
+      info.className = 'wall-info';
+      const name = document.createElement('b');
+      name.textContent = wallLabel(wallId, index);
+      const dims = document.createElement('small');
+      dims.textContent = `${fmtLen(d.length)} × ${fmtLen(d.height)}`;
+      info.append(name, dims);
+      info.addEventListener('click', () => selectWall(wallId));
+
+      const dl = document.createElement('button');
+      dl.type = 'button';
+      dl.className = 'btn';
+      dl.textContent = 'OBJ';
+      dl.title = 'Download this surface as OBJ';
+      dl.addEventListener('click', () => downloadWall(wallId));
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn danger';
+      del.textContent = '×';
+      del.title = 'Delete surface';
+      del.setAttribute('aria-label', `Delete ${name.textContent}`);
+      del.addEventListener('click', () => deleteWall(wallId));
+
+      item.append(swatch, info, dl, del);
+      listEl.append(item);
+    });
+
+    let pixels = 0;
+    ids.forEach((id) => {
+      const d = walls[id].userData;
+      const { tilesX, tilesY } = tileCounts(d);
+      pixels += tilesX * d.resX * tilesY * d.resY;
+    });
+    $('chip-walls').textContent = ids.length;
+    $('chip-pixels').textContent = pixels.toLocaleString();
+    renderLayoutInfo();
+  }
+
+  function clearAllWalls() {
+    Object.keys(walls).forEach((wallId) => {
+      scene.remove(walls[wallId]);
+      disposeWall(walls[wallId]);
+      delete walls[wallId];
+    });
+    selectedWallId = null;
+    transformControls.detach();
+    $('transform-panel').hidden = true;
+  }
+
+  // ---------- layout persistence ----------
+  function layoutPayload() {
+    return {
+      version: 1,
+      counter: wallCounter,
+      walls: Object.keys(walls).map((wallId) => {
+        const wall = walls[wallId];
+        return {
+          id: wallId,
+          params: { ...wall.userData },
+          position: { x: wall.position.x, y: wall.position.y, z: wall.position.z },
+          rotation: { x: wall.rotation.x, y: wall.rotation.y, z: wall.rotation.z }
+        };
+      })
+    };
+  }
+
+  function saveLayoutToStorage() {
+    return store.set(LAYOUT_STORAGE_KEY, JSON.stringify(layoutPayload()));
+  }
+
+  function applyLayoutPayload(parsed) {
+    if (!parsed || !Array.isArray(parsed.walls)) return false;
+    clearAllWalls();
+    wallCounter = Number.isInteger(parsed.counter) && parsed.counter >= 0 ? parsed.counter : 0;
+    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+    parsed.walls.forEach((wallData, index) => {
+      const params = sanitizeParams(wallData?.params, index);
+      let wallId = typeof wallData?.id === 'string' && /^wall_\d+$/.test(wallData.id) ? wallData.id : `wall_${wallCounter}`;
+      if (walls[wallId]) wallId = `wall_${wallCounter}`;
+      const wallMesh = createWallMesh(params);
+      wallMesh.userData = { ...params, wallId };
+      wallMesh.position.set(num(wallData?.position?.x), num(wallData?.position?.y), num(wallData?.position?.z));
+      wallMesh.rotation.set(num(wallData?.rotation?.x), num(wallData?.rotation?.y), num(wallData?.rotation?.z));
+      walls[wallId] = wallMesh;
+      scene.add(wallMesh);
+      wallCounter = Math.max(wallCounter, parseInt(wallId.slice(5), 10) + 1);
+    });
+
+    updateWallList();
+    const first = Object.keys(walls)[0];
+    if (first) selectWall(first);
+    return true;
+  }
+
+  function loadLayoutFromStorage() {
+    const raw = store.get(LAYOUT_STORAGE_KEY);
+    if (!raw) return false;
+    try {
+      return applyLayoutPayload(JSON.parse(raw));
+    } catch (err) {
+      console.warn('Unable to load saved layout', err);
+      return false;
+    }
+  }
+
+  $('saveLayout').addEventListener('click', () => {
+    toast(saveLayoutToStorage() ? 'Layout saved in this browser' : 'Could not save: browser storage is full or blocked.');
+  });
+  $('loadLayout').addEventListener('click', () => {
+    toast(loadLayoutFromStorage() ? 'Layout restored' : 'No saved layout in this browser yet.');
+  });
+  $('resetLayout').addEventListener('click', () => {
+    if (!confirm('Remove all surfaces and the saved layout?')) return;
+    store.del(LAYOUT_STORAGE_KEY);
+    clearAllWalls();
+    wallCounter = 0;
+    updateWallList();
+  });
+  $('exportJson').addEventListener('click', () => {
+    if (!Object.keys(walls).length) { toast('Add a surface first.'); return; }
+    downloadBlob(new Blob([JSON.stringify(layoutPayload(), null, 2)], { type: 'application/json' }), 'led-layout.json');
+  });
+  $('importJson').addEventListener('click', () => $('importFile').click());
+  $('importFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      if (applyLayoutPayload(JSON.parse(await file.text()))) {
+        saveLayoutToStorage();
+        toast(`Opened ${file.name}`);
+      } else {
+        toast('That file is not a layout file.');
+      }
+    } catch {
+      toast('That file could not be read.');
+    }
+  });
+
+  // ---------- transform inputs ----------
+  function updateTransformInputs() {
+    const wall = walls[selectedWallId];
+    if (!wall) return;
+    $('wall-pos-x').value = round(mToLen(wall.position.x), 3);
+    $('wall-pos-y').value = round(mToLen(wall.position.y), 3);
+    $('wall-pos-z').value = round(mToLen(wall.position.z), 3);
+    $('wall-rot-x').value = THREE.MathUtils.radToDeg(wall.rotation.x).toFixed(0);
+    $('wall-rot-y').value = THREE.MathUtils.radToDeg(wall.rotation.y).toFixed(0);
+    $('wall-rot-z').value = THREE.MathUtils.radToDeg(wall.rotation.z).toFixed(0);
+  }
+
+  ['wall-pos-x', 'wall-pos-y', 'wall-pos-z'].forEach((id) => {
+    $(id).addEventListener('change', () => {
+      const wall = walls[selectedWallId];
+      if (!wall) return;
+      wall.position.set(readLenM('wall-pos-x', 0), readLenM('wall-pos-y', 0), readLenM('wall-pos-z', 0));
+      saveLayoutToStorage();
+      renderLayoutInfo();
+    });
+  });
+  ['wall-rot-x', 'wall-rot-y', 'wall-rot-z'].forEach((id) => {
+    $(id).addEventListener('change', () => {
+      const wall = walls[selectedWallId];
+      if (!wall) return;
+      const deg = (i) => THREE.MathUtils.degToRad(parseFloat($(i).value) || 0);
+      wall.rotation.set(deg('wall-rot-x'), deg('wall-rot-y'), deg('wall-rot-z'));
+      saveLayoutToStorage();
+      renderLayoutInfo();
+    });
+  });
+
+  // ---------- snapping & modes ----------
+  let shiftHeld = false;
+  function applySnap() {
+    const enabled = $('snapEnabled').checked;
+    const size = readLenM('snapSize', 0.1);
+    transformControls.setTranslationSnap(enabled && !shiftHeld && size > 0 ? size : null);
+    const indicator = $('snap-indicator');
+    indicator.classList.toggle('on', enabled);
+    $('snap-text').textContent = enabled ? `Snap ${$('snapSize').value} ${units().lenLabel}` : 'Snap off';
+  }
+  $('snapEnabled').addEventListener('change', applySnap);
+  $('snapSize').addEventListener('input', applySnap);
+
+  const modeSeg = $('modeSeg');
+  function setMode(mode) {
+    transformControls.setMode(mode);
+    setSeg(modeSeg, mode);
+  }
+  modeSeg.addEventListener('change', () => setMode(getSeg(modeSeg)));
+
+  const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('ai-preview-modal').hidden) { closeAIPreview(); return; }
+    if (isTyping(e.target)) return;
+    if (e.key === 'Shift' && !shiftHeld) { shiftHeld = true; applySnap(); }
+    if (!selectedWallId || e.ctrlKey || e.metaKey || e.altKey) return;
+    switch (e.key.toLowerCase()) {
+      case 'g': setMode('translate'); break;
+      case 'r': setMode('rotate'); break;
+      case 't':
+        if (transformControls.object) transformControls.detach();
+        else transformControls.attach(walls[selectedWallId]);
+        break;
+      case 'escape': transformControls.detach(); break;
+      default: break;
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Shift') { shiftHeld = false; applySnap(); }
+  });
+  window.addEventListener('blur', () => { if (shiftHeld) { shiftHeld = false; applySnap(); } });
+
+  // Click to select (ignored after an orbit drag or while over a gizmo handle)
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  let downPos = null;
+  canvas.addEventListener('pointerdown', (e) => { downPos = { x: e.clientX, y: e.clientY }; });
+  canvas.addEventListener('click', (event) => {
+    if (downPos && Math.hypot(event.clientX - downPos.x, event.clientY - downPos.y) > 4) return;
+    if (transformControls.axis) return;
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+
+    const meshes = [];
+    Object.values(walls).forEach((wall) => wall.traverse((c) => { if (c.isMesh) meshes.push(c); }));
+    const hit = raycaster.intersectObjects(meshes, false)[0];
+    if (!hit) return;
+    let obj = hit.object;
+    while (obj.parent && !obj.userData.wallId) obj = obj.parent;
+    if (obj.userData.wallId) selectWall(obj.userData.wallId);
+  });
+
+  // ---------- OBJ export ----------
+  const OBJ_SCALE = { m: 1, cm: 100, mm: 1000, ft: 1 / 0.3048, in: 1 / 0.0254 };
+  const fmtN = (v) => String(Math.round(v * 1e6) / 1e6);
+
+  function wallToOBJ(wallId) {
+    const wall = walls[wallId];
+    const d = wall.userData;
+    const { tilesX, tilesY } = tileCounts(d);
+    const unit = $('objUnits').value in OBJ_SCALE ? $('objUnits').value : 'm';
+    const scale = OBJ_SCALE[unit];
+
+    let obj = `# LED Wall OBJ\n# ${d.length}m × ${d.height}m\n`;
+    obj += `# Tiles: ${tilesX} × ${tilesY}\n`;
+    obj += `# Type: ${d.type}\n`;
+    obj += `# Pivot: ${d.pivot}\n`;
+    obj += `# Units: ${unit}\n\n`;
+    obj += `o ${wallId}\n`;
+
+    wall.updateMatrixWorld(true);
+    const meshes = [];
+    wall.traverse((c) => { if (c.isMesh) meshes.push(c); });
+
+    meshes.forEach((child, tile) => {
+      const position = child.geometry.attributes.position;
+      const pts = [];
+      for (let i = 0; i < position.count; i++) {
+        const p = new THREE.Vector3().fromBufferAttribute(position, i).applyMatrix4(child.matrixWorld);
+        pts.push(p);
+        obj += `v ${(p.x * scale).toFixed(6)} ${(p.y * scale).toFixed(6)} ${(p.z * scale).toFixed(6)}\n`;
+      }
+
+      // Continuous UVs across the surface; tiles are generated row by row, column by column.
+      let u1 = 0; let u2 = 1; let v1 = 0; let v2 = 1;
+      if (meshes.length > 1) {
+        const col = tile % tilesX;
+        const row = Math.floor(tile / tilesX);
+        u1 = col / tilesX; u2 = (col + 1) / tilesX;
+        v1 = row / tilesY; v2 = (row + 1) / tilesY;
+      }
+      obj += `vt ${u1.toFixed(6)} ${v2.toFixed(6)}\n`;
+      obj += `vt ${u1.toFixed(6)} ${v1.toFixed(6)}\n`;
+      obj += `vt ${u2.toFixed(6)} ${v1.toFixed(6)}\n`;
+      obj += `vt ${u2.toFixed(6)} ${v2.toFixed(6)}\n`;
+
+      // Real face normal in world space (respects type and rotation).
+      const n = new THREE.Vector3().subVectors(pts[1], pts[0])
+        .cross(new THREE.Vector3().subVectors(pts[2], pts[0])).normalize();
+      obj += `vn ${fmtN(n.x)} ${fmtN(n.y)} ${fmtN(n.z)}\n`;
+
+      const vi = tile * 4 + 1;
+      const ni = tile + 1;
+      obj += `f ${vi}/${vi}/${ni} ${vi + 1}/${vi + 1}/${ni} ${vi + 2}/${vi + 2}/${ni} ${vi + 3}/${vi + 3}/${ni}\n`;
+    });
+
+    return { name: `${wallId}_${d.length}x${d.height}.obj`, text: obj };
+  }
+
+  function downloadWall(wallId) {
+    if (!walls[wallId]) return;
+    const { name, text } = wallToOBJ(wallId);
+    downloadBlob(new Blob([text], { type: 'text/plain' }), name);
+  }
+
+  $('exportAll').addEventListener('click', () => {
+    const ids = Object.keys(walls);
+    if (!ids.length) { toast('Add a surface first.'); return; }
+    const enc = new TextEncoder();
+    const files = ids.map((id) => {
+      const { name, text } = wallToOBJ(id);
+      return { name, data: enc.encode(text) };
+    });
+    files.push({ name: 'led-layout.json', data: enc.encode(JSON.stringify(layoutPayload(), null, 2)) });
+    downloadBlob(makeZip(files), 'led-surfaces.zip');
+    toast(`Exported ${ids.length} surface${ids.length === 1 ? '' : 's'}`);
+  });
+
+  // ---------- info ----------
+  function updateInfo() {
+    const p = readNewSurfaceParams();
+    const ok = [p.length, p.height, p.tileWidth, p.tileHeight].every((v) => Number.isFinite(v) && v > 0);
+    const resX = p.resX > 0 ? p.resX : 0;
+    const resY = p.resY > 0 ? p.resY : 0;
+    if (!ok) {
+      ['info-tiles', 'info-resolution', 'info-uhd'].forEach((id) => { $(id).textContent = '–'; });
+      return;
+    }
+    const { tilesX, tilesY } = tileCounts(p);
+    const totalResX = tilesX * resX;
+    const totalResY = tilesY * resY;
+    $('info-tiles').textContent = `${(tilesX * tilesY).toLocaleString()} (${tilesX}×${tilesY})`;
+    $('info-resolution').textContent = `${totalResX}×${totalResY}`;
+    $('info-uhd').textContent = Math.ceil((totalResX * totalResY) / (3840 * 2160));
+    $('info-note').textContent = `Actual size: ${fmtLen(tilesX * p.tileWidth)} × ${fmtLen(tilesY * p.tileHeight)} (rounded to whole cabinets).`;
+  }
+  ['length', 'height', 'tileWidth', 'tileHeight', 'resX', 'resY'].forEach((id) => $(id).addEventListener('input', updateInfo));
+
+  function syncTypeUI() {
+    const type = getSeg($('surfaceType'));
+    $('heightLabel').firstChild.textContent = type === 'wall' ? 'Height (' : 'Depth (';
+    $('pivotDepth').querySelectorAll('button').forEach((b) => { b.disabled = type === 'wall'; });
+  }
+
+  function renderLayoutInfo() {
+    const container = $('layout-info');
+    const ids = Object.keys(walls);
+    if (!ids.length) {
+      container.textContent = 'No surfaces yet.';
+      return;
+    }
+    container.replaceChildren(...ids.map((wallId, idx) => {
+      const wall = walls[wallId];
+      const d = wall.userData;
+      const pos = wall.position;
+      const row = document.createElement('div');
+      const title = document.createElement('b');
+      title.textContent = wallLabel(wallId, idx);
+      const body = document.createElement('div');
+      body.className = 'mono';
+      body.textContent = `${fmtLen(d.length)} × ${fmtLen(d.height)} · pos ${round(mToLen(pos.x), 2)}, ${round(mToLen(pos.y), 2)}, ${round(mToLen(pos.z), 2)} · rot Y ${THREE.MathUtils.radToDeg(wall.rotation.y).toFixed(1)}°`;
+      row.append(title, body);
+      return row;
+    }));
+  }
+
+  // ---------- render loop ----------
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+    gizmoCamera.position.copy(camera.position).sub(controls.target).normalize().multiplyScalar(3);
+    gizmoCamera.lookAt(gizmoScene.position);
+    gizmoRenderer.render(gizmoScene, gizmoCamera);
+  }
+
+  // ---------- AI visualization (bring your own key) ----------
+  const GEMINI_MODEL = 'gemini-3-pro-image-preview';
+  const environmentPrompts = {
+    'art-gallery': 'Installed in a modern gallery space with architectural interest (not a plain white box). Subtle gallery lighting, polished concrete floors. The LED walls are free-standing, edge-to-edge, with no visible frames or mounts.',
+    'concert-venue': 'On a concert stage with lighting truss and moving lights. Dark venue atmosphere with dramatic lighting. The LED wall sits center stage.',
+    studio: 'In a clean event studio with controlled lighting and a dark backdrop. The LED wall is floor-standing.',
+    conference: 'In a conference or keynote hall with a stage, lectern and rows of seating. Soft stage wash lighting.',
+    retail: 'Inside a modern retail store with large windows, natural daylight and a clean contemporary interior.',
+    outdoor: 'Outdoor installation on a building facade in a city, daytime natural lighting, integrated into the architecture.',
+    custom: ''
+  };
+
+  const keyInput = $('geminiKey');
+  const aiBtn = $('ai-gen-btn');
+  const aiStatus = $('ai-status');
+  const promptInput = $('aiPrompt');
+  const envSelect = $('envPreset');
+  let currentAIImage = null;
+  let aiBusy = false;
+
+  function syncAIButton() {
+    const hasKey = keyInput.value.trim().length > 0;
+    aiBtn.disabled = !hasKey || aiBusy;
+    if (!aiBusy) aiStatus.textContent = hasKey ? 'Ready. Frame the view you want, then generate.' : 'Enter an API key to enable.';
+  }
+
+  keyInput.value = store.get(KEY_GEMINI) || '';
+  keyInput.addEventListener('input', () => {
+    const k = keyInput.value.trim();
+    if (k) store.set(KEY_GEMINI, k); else store.del(KEY_GEMINI);
+    syncAIButton();
+  });
+  $('forgetKey').addEventListener('click', () => {
+    keyInput.value = '';
+    store.del(KEY_GEMINI);
+    syncAIButton();
+    toast('API key removed from this browser');
+  });
+
+  const savedPrompt = store.get(KEY_PROMPT);
+  if (savedPrompt) promptInput.value = savedPrompt;
+  const savedEnv = store.get(KEY_ENV);
+  if (savedEnv && savedEnv in environmentPrompts) envSelect.value = savedEnv;
+  promptInput.addEventListener('input', () => store.set(KEY_PROMPT, promptInput.value));
+  envSelect.addEventListener('change', () => store.set(KEY_ENV, envSelect.value));
+
+  function captureView() {
+    const size = renderer.getSize(new THREE.Vector2());
+    const ratio = renderer.getPixelRatio();
+    const aspect = camera.aspect;
+    const gizmoVisible = transformControls.visible;
+    transformControls.visible = false;
+    renderer.setPixelRatio(1);
+    renderer.setSize(1280, 720, false);
+    camera.aspect = 1280 / 720;
+    camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+    const data = renderer.domElement.toDataURL('image/png').split(',')[1];
+    transformControls.visible = gizmoVisible;
+    renderer.setPixelRatio(ratio);
+    renderer.setSize(size.x, size.y, false);
+    camera.aspect = aspect;
+    camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+    return data;
+  }
+
+  function describeLayout() {
+    const ids = Object.keys(walls);
+    const layoutData = ids.map((wallId, index) => {
+      const wall = walls[wallId];
+      const pos = wall.position;
+      const d = wall.userData;
+      const rotY = THREE.MathUtils.radToDeg(wall.rotation.y);
+      const a = ((rotY % 360) + 360) % 360;
+      let orientation;
+      if (d.type === 'floor') orientation = 'flat LED floor surface lying on the ground';
+      else if (d.type === 'ceiling') orientation = 'flat LED ceiling surface facing down';
+      else if (a < 45 || a >= 315) orientation = 'vertical wall facing forward (toward the viewer)';
+      else if (a < 135) orientation = 'vertical wall on the left side, facing right';
+      else if (a < 225) orientation = 'vertical wall facing backward (away from the viewer)';
+      else orientation = 'vertical wall on the right side, facing left';
+
+      let where = '';
+      if (Math.abs(pos.x) < 0.5) where += 'centered horizontally, ';
+      else if (pos.x > 0) where += `${pos.x.toFixed(1)}m to the right of center, `;
+      else where += `${Math.abs(pos.x).toFixed(1)}m to the left of center, `;
+      where += pos.y < 0.5 ? 'on the floor, ' : `${pos.y.toFixed(1)}m above the floor, `;
+      if (Math.abs(pos.z) < 0.5) where += 'at the front of the space';
+      else if (pos.z > 0) where += `${pos.z.toFixed(1)}m toward the viewer`;
+      else where += `${Math.abs(pos.z).toFixed(1)}m toward the back`;
+
+      return `LED surface ${index + 1}: ${d.length}m wide × ${d.height}m ${d.type === 'wall' ? 'tall' : 'deep'}, ${where}. This is a ${orientation}.`;
+    }).join('\n\n');
+
+    const layoutJSON = JSON.stringify(ids.map((wallId, index) => {
+      const wall = walls[wallId];
+      const r = (v) => parseFloat(v.toFixed(3));
+      return {
+        id: `Surface ${index + 1}`,
+        type: wall.userData.type,
+        size_m: { width: wall.userData.length, height: wall.userData.height },
+        position_m: { x: r(wall.position.x), y: r(wall.position.y), z: r(wall.position.z) },
+        rotation_deg: {
+          x: r(THREE.MathUtils.radToDeg(wall.rotation.x)),
+          y: r(THREE.MathUtils.radToDeg(wall.rotation.y)),
+          z: r(THREE.MathUtils.radToDeg(wall.rotation.z))
+        }
+      };
+    }), null, 2);
+
+    const n = ids.length;
+    const layoutDesc = n === 1
+      ? 'There is one LED surface in this installation.'
+      : `There are ${n} LED surfaces in this installation. Pay close attention to their positions and angles: some may meet at corners, others may stand apart.`;
+    const cameraInfo = `Camera position (m): x=${camera.position.x.toFixed(3)}, y=${camera.position.y.toFixed(3)}, z=${camera.position.z.toFixed(3)} | Target: x=${controls.target.x.toFixed(3)}, y=${controls.target.y.toFixed(3)}, z=${controls.target.z.toFixed(3)}`;
+    const distances = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        distances.push(`Surface ${i + 1} ↔ Surface ${j + 1}: ${walls[ids[i]].position.distanceTo(walls[ids[j]].position).toFixed(3)}m`);
+      }
+    }
+    return {
+      context: `${layoutDesc}\n\n${layoutData}\n\nCamera: ${cameraInfo}\nDistances between surfaces (meters):\n${distances.join('\n') || 'n/a'}`,
+      layoutJSON
+    };
+  }
+
+  async function generateAIContent() {
+    const apiKey = keyInput.value.trim();
+    const prompt = promptInput.value.trim();
+    if (!apiKey) { toast('Paste your Gemini API key first.'); return; }
+    if (!prompt) { toast('Describe what the screens show first.'); return; }
+    if (!Object.keys(walls).length) { toast('Add at least one surface first.'); return; }
+
+    aiBusy = true;
+    syncAIButton();
+    aiStatus.textContent = 'Capturing the view…';
+    try {
+      const base64Screenshot = captureView();
+      const { context, layoutJSON } = describeLayout();
+      const env = environmentPrompts[envSelect.value];
+
+      let fullPrompt = 'Create a photorealistic architectural visualization showing LED video walls physically installed in a 3D space. ';
+      fullPrompt += env ? `${env} ` : 'A fitting, realistic installation environment with appropriate lighting. ';
+      fullPrompt += '\n\nThe attached PNG is a screenshot from the current camera angle. It is the ground truth for layout and framing. Match it exactly. ';
+      fullPrompt += 'Study it carefully: it shows the precise spatial arrangement of the LED surfaces.\n\n';
+      fullPrompt += `=== LED configuration (natural language) ===\n${context}\n\n`;
+      fullPrompt += `=== Exact layout data (meters, do NOT change) ===\n${layoutJSON}\n\n`;
+      fullPrompt += 'CRITICAL INSTRUCTIONS:\n';
+      fullPrompt += '1. Do not reposition, separate, duplicate or delete any LED surface. Use the exact positions and rotations from the reference image and layout data.\n';
+      fullPrompt += '2. Keep all surfaces in the same room, within the cluster shown in the reference.\n';
+      fullPrompt += '3. Preserve the distances between surfaces. Surfaces that are adjacent (within ~0.2m) must render touching, as one installation.\n';
+      fullPrompt += '4. Treat connected surfaces as one continuous LED canvas: no frames, seams, bezels or white borders; pixels run edge to edge around corners.\n';
+      fullPrompt += '5. Vertical walls are free-standing and rest on the ground. Do not mount them to architectural walls and do not let them float. Floor surfaces lie on the ground; ceiling surfaces hang overhead.\n';
+      fullPrompt += '6. Place the layout in a realistic setting with the same spatial relationships and angles. Avoid plain white-wall backdrops.\n';
+      fullPrompt += '7. Keep the same camera angle and perspective as the reference.\n';
+      fullPrompt += `8. The LED surfaces display: ${prompt}. Continue the content seamlessly across adjacent surfaces.\n\n`;
+      fullPrompt += 'Render it as a professional architectural visualization with realistic lighting, shadows and environmental detail. ';
+      fullPrompt += 'The spatial layout must match the reference image and the layout data above, including the tight spacing between surfaces.';
+
+      aiStatus.textContent = 'Generating… this can take up to a minute.';
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { inlineData: { mimeType: 'image/png', data: base64Screenshot } },
+              { text: fullPrompt }
+            ]
+          }],
+          generationConfig: {
+            temperature: 1,
+            maxOutputTokens: 8192,
+            responseModalities: ['TEXT', 'IMAGE']
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `API error ${response.status}`);
+      }
+
+      const data = await response.json();
+      const parts = data.candidates?.[0]?.content?.parts;
+      if (!Array.isArray(parts)) throw new Error('Unexpected response from the API');
+
+      let imageData = null;
+      let textResponse = '';
+      for (const part of parts) {
+        if (part.inlineData?.mimeType?.startsWith('image/')) imageData = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        if (part.text) textResponse += part.text;
+      }
+
+      if (imageData) {
+        currentAIImage = imageData;
+        $('ai-preview-image').src = imageData;
+        $('ai-preview-modal').hidden = false;
+        aiStatus.textContent = 'Done.';
+        toast('Visualization ready');
+      } else if (textResponse) {
+        aiStatus.textContent = 'The model replied with text only. Try a more visual prompt.';
+        toast('No image returned. Try a more specific, visual prompt.', 4000);
+        console.info('Model reply:', textResponse);
+      } else {
+        throw new Error('No image in the response');
+      }
+    } catch (error) {
+      console.error('AI generation error:', error);
+      aiStatus.textContent = `Error: ${error.message}. Check the key, quota and model access, then retry.`;
+      toast('Generation failed. See the note under the button.', 4000);
+    } finally {
+      aiBusy = false;
+      syncAIButton();
+      if (aiStatus.textContent.startsWith('Generating') || aiStatus.textContent.startsWith('Capturing')) aiStatus.textContent = '';
+    }
+  }
+
+  function closeAIPreview() {
+    $('ai-preview-modal').hidden = true;
+  }
+
+  aiBtn.addEventListener('click', generateAIContent);
+  $('ai-close').addEventListener('click', closeAIPreview);
+  $('ai-download').addEventListener('click', () => {
+    if (!currentAIImage) return;
+    const ext = currentAIImage.startsWith('data:image/jpeg') ? 'jpg' : 'png';
+    const a = document.createElement('a');
+    a.href = currentAIImage;
+    a.download = `led-visualization-${Date.now()}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+  $('ai-preview-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'ai-preview-modal') closeAIPreview();
+  });
+
+  // ---------- init ----------
+  [unitsSeg, $('surfaceType'), $('pivotDepth'), $('pivotSide'), modeSeg].forEach(initSeg);
+  unitsSeg.addEventListener('change', () => setUnits(getSeg(unitsSeg)));
+  $('surfaceType').addEventListener('change', syncTypeUI);
+  $('addWall').addEventListener('click', addWall);
+  $('addWallTop').addEventListener('click', addWall);
+  $('resetView').addEventListener('click', resetView);
+
+  if (store.get(KEY_UNITS) === 'imperial') setUnits('imperial');
+  syncTypeUI();
+  updateInfo();
+  applySnap();
+  // First visit: start with one sample wall instead of an empty scene.
+  if (!loadLayoutFromStorage()) { addWall(); updateWallList(); }
+  syncAIButton();
+  animate();
+</script>
+</body>
+</html>
