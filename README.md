@@ -31,6 +31,14 @@
 
 **Offline:** download the repo and open `index.html` in Chrome, Edge, Firefox or Safari. Each tool is one HTML file; the 3D tools load three.js from a CDN.
 
+**Embed:** add `?embed=1` to any tool URL to put it in an iframe on your own site. The tool menu is hidden, and outside links open in the full window.
+
+```html
+<iframe src="https://tommywu-01.github.io/led-wall-toolkit/pixel-mapper.html?embed=1"
+        style="width:100%;height:860px;border:0" allow="clipboard-write" loading="lazy"
+        title="LED pixel map generator"></iframe>
+```
+
 ## Pixel Mapper quick start
 
 1. Enter one cabinet's size in pixels and mm (from the panel spec sheet). Pixel pitch is worked out for you. Save it under **My cabinets** to reuse it.
